@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Fixed Slurm helm chart using incorrect imagePullPolicy in values file.
+
 ### Changed
 
 ### Removed
