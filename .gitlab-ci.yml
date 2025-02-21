@@ -13,9 +13,9 @@ variables:
   CI_JOB_USER: gitlab-ci-token
 
 .docker:
-  image: docker:27.3.0
+  image: docker:27.5.0
   services:
-    - docker:27.3.0-rc.1-dind
+    - docker:27.5.0-rc.1-dind
   before_script:
     - set -euo pipefail
     - docker info
@@ -120,7 +120,9 @@ release:
         helm pull ${CI_PROJECT_NAME}/${CHART_NAME};
         helm push ./${CHART_ARTIFACT} oci://${DOCKER_REGISTRY}/charts;
       done
-  when: manual
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
+      when: manual
 
 include:
   - template: Jobs/Secret-Detection.gitlab-ci.yml
