@@ -56,10 +56,10 @@ build:
         helm package --dependency-update ${chart};
       done
   rules:
-    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_REF_PROTECTED != "true"
       changes:
         - Dockerfile
-        - \'**/*.go\'
+        - ./**/*.go
         - go.mod
         - go.sum
         - helm/**/*
@@ -84,10 +84,10 @@ push:
         helm cm-push ./${CHART_ARTIFACT} ${CI_PROJECT_NAME};
       done
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
       changes:
         - Dockerfile
-        - \'**/*.go\'
+        - ./**/*.go
         - go.mod
         - go.sum
         - helm/**/*
