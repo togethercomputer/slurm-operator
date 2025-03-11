@@ -49,6 +49,7 @@ spec:
         - name: sackd
           image: {{ include "slurm.authcred.imageRef" . }}
           imagePullPolicy: {{ include "slurm.imagePullPolicy" . }}
+          restartPolicy: Always
           securityContext:
             {{- include "slurm.securityContext" . | nindent 12 }}
           args:
