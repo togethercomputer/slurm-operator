@@ -135,6 +135,8 @@ spec:
             - name: {{ $vct.metadata.name }}
               mountPath: {{ $vct.spec.mountPath | default (printf "/mnt/%s" $vct.metadata.name ) }}
             {{- end }}{{- /* range $vct := $nodeset.volumeClaimTemplates */}}
+            - mountPath: /dev/shm
+              name: dshm
       volumes:
         {{- include "slurm.volumes" $ | nindent 8 }}
         - name: slurm-config
@@ -143,6 +145,10 @@ spec:
             sources:
               - secret:
                   name: {{ include "slurm.auth.secretName" $ }}
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+          name: dshm
   {{- if $nodeset.volumeClaimTemplates }}
   volumeClaimTemplates:
     {{- $nodeset.volumeClaimTemplates | toYaml | nindent 4 }}
