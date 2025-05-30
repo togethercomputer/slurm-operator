@@ -137,15 +137,12 @@ spec:
             {{- end }}{{- /* range $vct := $nodeset.volumeClaimTemplates */}}
             - mountPath: /dev/shm
               name: dshm
-<<<<<<< Updated upstream
-=======
             {{- if $nodeset.persistence.existingClaims }}
             {{- range $nodeset.persistence.existingClaims }}
             - name: {{ .name }}
                 mountPath: {{ .mountPath }}
               {{- end }}{{- /* range $nodeset.persistence.existingClaims */}}
             {{- end }}{{- /* if $nodeset.persistence.existingClaims */}}
->>>>>>> Stashed changes
       volumes:
         {{- include "slurm.volumes" $ | nindent 8 }}
         - name: slurm-config
@@ -158,8 +155,6 @@ spec:
             medium: Memory
             sizeLimit: 1Gi
           name: dshm
-<<<<<<< Updated upstream
-=======
         {{- if $nodeset.persistence.existingClaims }}
         {{- range $nodeset.persistence.existingClaims }}
         - name: {{ .name }}
@@ -167,7 +162,6 @@ spec:
             claimName: {{ .name }}
         {{- end }}{{- /* range $nodeset.persistence.existingClaims */}}
         {{- end }}{{- /* if $nodeset.persistence.existingClaims */}}
->>>>>>> Stashed changes
   {{- if $nodeset.volumeClaimTemplates }}
   volumeClaimTemplates:
     {{- $nodeset.volumeClaimTemplates | toYaml | nindent 4 }}
