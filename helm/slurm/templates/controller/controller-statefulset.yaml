@@ -125,17 +125,15 @@ spec:
               {{ . }}
               {{- end }}{{- /* range .Files.Lines "scripts/reconfigure.sh" */}}
           volumeMounts:
-            {{- range $vct := .Values.controller.volumeClaimTemplates }}
-            - name: {{ $vct.metadata.name }}
-              mountPath: {{ $vct.spec.mountPath | default (printf "/mnt/%s" $vct.metadata.name ) }}
-            {{- end }}{{- /* range $vct := .Values.controller.volumeClaimTemplates */}}
             {{- include "slurm.init.volumeMounts" . | nindent 12 }}
             - name: authsocket
               mountPath: /run/slurmctld
+            {{- if .Values.controller.persistence.existingDataClaims }}
             {{- range .Values.controller.persistence.existingDataClaims }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
             {{- end }}{{- /* range .Values.controller.persistence.existingDataClaims */}}
+            {{- end }}{{- /* if .Values.controller.persistence.existingDataClaims */}}
       volumes:
         {{- include "slurm.volumes" . | nindent 8 }}
         - name: slurm-config
@@ -153,16 +151,15 @@ spec:
           persistentVolumeClaim:
             claimName: {{ tpl .Values.controller.persistence.existingClaim . }}
         {{- end }}{{- /* if .Values.controller.persistence.existingClaim */}}
+        {{- if .Values.controller.persistence.existingDataClaims }}
         {{- range .Values.controller.persistence.existingDataClaims }}
         - name: {{ include "slurm.controller.statesave.name" . }}
           persistentVolumeClaim:
             claimName: {{ .name }}
         {{- end }}{{- /* range .Values.controller.persistence.existingDataClaims */}}
+        {{- end }}{{- /* if .Values.controller.persistence.existingDataClaims */}}
   {{- if not .Values.controller.persistence.existingClaim }}
   volumeClaimTemplates:
-  {{- if .Values.controller.volumeClaimTemplates }}
-    {{- .Values.controller.volumeClaimTemplates | toYaml | nindent 4 }}
-  {{- end }}{{- /* if .Values.controller.volumeClaimTemplates */}}
     - metadata:
         name: {{ include "slurm.controller.statesave.name" . }}
         namespace: {{ include "slurm.namespace" . }}
