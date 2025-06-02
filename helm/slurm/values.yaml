@@ -413,7 +413,7 @@ compute:
         #
         # -- (string)
         # Name of an existing `PersistentVolumeClaim` to use instead of creating one from definition.
-        existingClaims: []
+        existingDataClaims: []
         # - name: data-cpu-pv
         #   mountPath: /data
         # - name: scratch-gpu-pv
