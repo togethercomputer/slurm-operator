@@ -136,7 +136,7 @@ spec:
               mountPath: {{ $vct.spec.mountPath | default (printf "/mnt/%s" $vct.metadata.name ) }}
             {{- end }}{{- /* range $vct := $nodeset.volumeClaimTemplates */}}
             - mountPath: /dev/shm
-              nam e: dshm
+              name: dshm
             {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
             {{- range $nodeset.persistence.existingDataClaims }}
             - name: {{ .name }}
