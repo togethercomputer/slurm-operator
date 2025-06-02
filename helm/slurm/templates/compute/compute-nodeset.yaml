@@ -136,8 +136,8 @@ spec:
               mountPath: {{ $vct.spec.mountPath | default (printf "/mnt/%s" $vct.metadata.name ) }}
             {{- end }}{{- /* range $vct := $nodeset.volumeClaimTemplates */}}
             - mountPath: /dev/shm
-              name: dshm
-            {{- if $nodeset.persistence.existingDataClaims }}
+              nam e: dshm
+            {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
             {{- range $nodeset.persistence.existingDataClaims }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
@@ -155,7 +155,7 @@ spec:
             medium: Memory
             sizeLimit: 1Gi
           name: dshm
-        {{- if $nodeset.persistence.existingDataClaims }}
+        {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
         {{- range $nodeset.persistence.existingDataClaims }}
         - name: {{ .name }}
           persistentVolumeClaim:
