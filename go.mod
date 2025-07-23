@@ -1,4 +1,4 @@
-module github.com/SlinkyProject/slurm-operator
+module github.com/togethercomputer/slurm-operator
 
 go 1.22.0
 
