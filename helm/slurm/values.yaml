@@ -242,22 +242,6 @@ controller:
     selector: {}
       # matchLabels:
       #   app: foo
-      #
-      # --(list)
-      # List of claims that pods are allowed to reference.
-      # The NodeSet controller is responsible for mapping network identities to
-      # claims in a way that maintains the identity of a pod.
-  volumeClaimTemplates: []
-    # - metadata:
-    #     name: data
-    #   spec:
-    #     storageClassName: standard
-    #     mountPath: /mnt/data
-    #     accessModes:
-    #       - ReadWriteOnce
-    #     resources:
-    #       requests:
-    #         storage: 1Gi
 
 #
 # Slurm compute (slurmd) configurations.
