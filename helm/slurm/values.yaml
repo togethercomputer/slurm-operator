@@ -216,15 +216,6 @@ controller:
     # NOTE: When not empty, the other persistence fields will be ignored.
     existingClaim: ""
     #
-    # -- (map[string]string)
-    # Name of an existing `PersistentVolumeClaim` to use instead of creating one from definition.
-    # NOTE: When not empty, the other persistence fields will be ignored.
-    existingDataClaims: []
-    # - name: data-cpu-pv
-    #   mountPath: /data
-    # - name: scratch-gpu-pv
-    #   mountPath: /scratch
-    #
     # -- (object)
     # Create a `PersistentVolumeClaim` with these annotations.
     annotations: {}

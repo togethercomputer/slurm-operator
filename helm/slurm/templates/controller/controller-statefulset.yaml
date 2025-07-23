@@ -128,12 +128,6 @@ spec:
             {{- include "slurm.init.volumeMounts" . | nindent 12 }}
             - name: authsocket
               mountPath: /run/slurmctld
-            {{- if and .Values.controller.persistence .Values.controller.persistence.existingDataClaims }}
-            {{- range .Values.controller.persistence.existingDataClaims }}
-            - name: {{ .name }}
-              mountPath: {{ .mountPath }}
-            {{- end }}{{- /* range .Values.controller.persistence.existingDataClaims */}}
-            {{- end }}{{- /* if .Values.controller.persistence.existingDataClaims */}}
       volumes:
         {{- include "slurm.volumes" . | nindent 8 }}
         - name: slurm-config
@@ -151,13 +145,6 @@ spec:
           persistentVolumeClaim:
             claimName: {{ tpl .Values.controller.persistence.existingClaim . }}
         {{- end }}{{- /* if .Values.controller.persistence.existingClaim */}}
-        {{- if and .Values.controller.persistence .Values.controller.persistence.existingDataClaims }}
-        {{- range .Values.controller.persistence.existingDataClaims }}
-        - name: {{ include "slurm.controller.statesave.name" . }}
-          persistentVolumeClaim:
-            claimName: {{ .name }}
-        {{- end }}{{- /* range .Values.controller.persistence.existingDataClaims */}}
-        {{- end }}{{- /* if .Values.controller.persistence.existingDataClaims */}}
   {{- if not .Values.controller.persistence.existingClaim }}
   volumeClaimTemplates:
     - metadata:
