@@ -137,6 +137,12 @@ spec:
             {{- end }}{{- /* range $vct := $nodeset.volumeClaimTemplates */}}
             - mountPath: /dev/shm
               name: dshm
+            {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
+            {{- range $nodeset.persistence.existingDataClaims }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+            {{- end }}{{- /* range $nodeset.persistence.existingDataClaims */}}
+            {{- end }}{{- /* if $nodeset.persistence.existingDataClaims */}}
       volumes:
         {{- include "slurm.volumes" $ | nindent 8 }}
         - name: slurm-config
@@ -149,6 +155,13 @@ spec:
             medium: Memory
             sizeLimit: 1Gi
           name: dshm
+        {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
+        {{- range $nodeset.persistence.existingDataClaims }}
+        - name: {{ .name }}
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+        {{- end }}{{- /* range $nodeset.persistence.existingDataClaims */}}
+        {{- end }}{{- /* if $nodeset.persistence.existingDataClaims */}}
   {{- if $nodeset.volumeClaimTemplates }}
   volumeClaimTemplates:
     {{- $nodeset.volumeClaimTemplates | toYaml | nindent 4 }}
