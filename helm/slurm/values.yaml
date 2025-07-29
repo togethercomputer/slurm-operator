@@ -472,6 +472,17 @@ compute:
         # `Delete` policy causes those PVCs to be deleted.
         whenDeleted: Retain
       #
+      # Define a persistent volume for the nodeset to store its save-state.
+      persistence:
+        #
+        # -- (string)
+        # Name of an existing `PersistentVolumeClaim` to use instead of creating one from definition.
+        existingDataClaims: []
+        # - name: data-cpu-pv
+        #   mountPath: /data
+        # - name: scratch-gpu-pv
+        #   mountPath: /scratch
+      #
       # --(list)
       # List of claims that pods are allowed to reference.
       # The NodeSet controller is responsible for mapping network identities to
