@@ -58,7 +58,7 @@ spec:
           {{- end }}
           env:
             - name: SACKD_OPTIONS
-              value: --conf-server={{- printf "%s:%s" (include "slurm.controller.name" .) (include "slurm.controller.port" .) }}
+              value: -D --conf-server={{- printf "%s:%s" (include "slurm.controller.name" .) (include "slurm.controller.port" .) }}
           ports:
             - name: ssh
               containerPort: 22
