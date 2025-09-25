@@ -35,6 +35,7 @@ import (
 	"github.com/SlinkyProject/slurm-operator/internal/errors"
 	"github.com/SlinkyProject/slurm-operator/internal/resources"
 	"github.com/SlinkyProject/slurm-operator/internal/utils"
+	"github.com/togethercomputer/slurm-operator/internal/annotations"
 )
 
 // NodeSetControl implements the control logic for synchronizing NodeSets and their children Pods. It is implemented
@@ -335,6 +336,18 @@ func (nsc *defaultNodeSetControl) SyncNodeSet(
 			errors = append(errors, err)
 		}
 		return utilerrors.NewAggregate(errors)
+	}
+	
+	// Annotate the cluster to indicate nodes that are cordoned or not
+	for node, pods := range nodeToNodeSetPods {
+		// Weird to be an array, there should only be one pod on a node
+		for _, pod := range pods {
+			if nsc.podControl.isNodeSetPodDrain(ctx, set, pod) {
+				node.Annotations[annotations.NodeCordon] = "true"
+			} else {
+				node.Annotations[annotations.NodeCordon] = "false"
+			}
+		}
 	}
 
 	return nsc.syncNodeSetStatus(ctx, set, nodes, nodeToNodeSetPods, collisionCount, currentHash, true)
