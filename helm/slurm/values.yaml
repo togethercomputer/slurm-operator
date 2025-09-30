@@ -664,7 +664,7 @@ restapi:
   #
   # -- (bool)
   # Enables restapi services.
-  enabled: true
+  enabled: false
   #
   # -- (integer)
   # Set the number of replicas to deploy.
