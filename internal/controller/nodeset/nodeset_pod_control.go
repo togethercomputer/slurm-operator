@@ -26,10 +26,10 @@ import (
 	"github.com/SlinkyProject/slurm-client/pkg/object"
 	slurmtypes "github.com/SlinkyProject/slurm-client/pkg/types"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/annotations"
-	"github.com/SlinkyProject/slurm-operator/internal/errors"
-	"github.com/SlinkyProject/slurm-operator/internal/resources"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
+	"github.com/togethercomputer/slurm-operator/internal/annotations"
+	"github.com/togethercomputer/slurm-operator/internal/errors"
+	"github.com/togethercomputer/slurm-operator/internal/resources"
 )
 
 // NodeSetPodControlObjectManager abstracts the manipulation of Pods and PVCs. The real controller implements this

@@ -28,9 +28,9 @@ import (
 	"k8s.io/utils/integer"
 	"k8s.io/utils/ptr"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/annotations"
-	"github.com/SlinkyProject/slurm-operator/internal/utils"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
+	"github.com/togethercomputer/slurm-operator/internal/annotations"
+	"github.com/togethercomputer/slurm-operator/internal/utils"
 )
 
 // var patchCodec = scheme.Codecs.LegacyCodec(slinkyv1alpha1.SchemeGroupVersion)

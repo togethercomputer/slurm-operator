@@ -23,9 +23,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/resources"
-	"github.com/SlinkyProject/slurm-operator/internal/utils/durationstore"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
+	"github.com/togethercomputer/slurm-operator/internal/resources"
+	"github.com/togethercomputer/slurm-operator/internal/utils/durationstore"
 )
 
 const (
