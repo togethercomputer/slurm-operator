@@ -342,6 +342,9 @@ func (nsc *defaultNodeSetControl) SyncNodeSet(
 	for node, pods := range nodeToNodeSetPods {
 		// Weird to be an array, there should only be one pod on a node
 		for _, pod := range pods {
+			if node.Annotations == nil {
+				node.Annotations = make(map[string]string)
+			}
 			if nsc.podControl.isNodeSetPodDrain(ctx, set, pod) {
 				node.Annotations[annotations.NodeCordon] = "true"
 			} else {
