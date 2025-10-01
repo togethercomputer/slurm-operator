@@ -361,6 +361,16 @@ func newNodeSetPod(set *slinkyv1alpha1.NodeSet, nodeName, hash string) *corev1.P
 
 	// Added default tolerations for NodeSet pods, pinning Pod to Node by nodeName.
 	util.AddOrUpdateDaemonPodTolerations(&pod.Spec)
+	
+	// Remove unschedulable toleration
+	tolerations := pod.Spec.Tolerations
+	var filteredTolerations []corev1.Toleration
+	for _, toleration := range tolerations {
+		if toleration.Key != corev1.TaintNodeUnschedulable {
+			filteredTolerations = append(filteredTolerations, toleration)
+		}
+	}
+	pod.Spec.Tolerations = filteredTolerations
 
 	// The pod's NodeAffinity will be updated to make sure the Pod is bound
 	// to the target node by default scheduler. It is safe to do so because there
