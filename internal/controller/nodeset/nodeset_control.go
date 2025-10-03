@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
-	"github.com/togethercomputer/slurm-operator/internal/annotations"
 	"github.com/togethercomputer/slurm-operator/internal/errors"
 	"github.com/togethercomputer/slurm-operator/internal/resources"
 	"github.com/togethercomputer/slurm-operator/internal/utils"
@@ -336,21 +335,6 @@ func (nsc *defaultNodeSetControl) SyncNodeSet(
 			errors = append(errors, err)
 		}
 		return utilerrors.NewAggregate(errors)
-	}
-	
-	// Annotate the cluster to indicate nodes that are cordoned or not
-	for node, pods := range nodeToNodeSetPods {
-		// Weird to be an array, there should only be one pod on a node
-		for _, pod := range pods {
-			if node.Annotations == nil {
-				node.Annotations = make(map[string]string)
-			}
-			if nsc.podControl.isNodeSetPodDrain(ctx, set, pod) {
-				node.Annotations[annotations.NodeCordon] = "true"
-			} else {
-				node.Annotations[annotations.NodeCordon] = "false"
-			}
-		}
 	}
 
 	return nsc.syncNodeSetStatus(ctx, set, nodes, nodeToNodeSetPods, collisionCount, currentHash, true)
