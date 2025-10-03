@@ -23,7 +23,7 @@ import (
 	slurmtypes "github.com/SlinkyProject/slurm-client/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
 )
 
 func newFakeClientList(interceptorFuncs interceptor.Funcs, initObjLists ...object.ObjectList) slurmclient.Client {

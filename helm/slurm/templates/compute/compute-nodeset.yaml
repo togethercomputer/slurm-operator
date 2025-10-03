@@ -155,7 +155,7 @@ spec:
                   name: {{ include "slurm.auth.secretName" $ }}
         - emptyDir:
             medium: Memory
-            sizeLimit: 16Gi
+            sizeLimit: {{ $nodeset.shmSize }}
           name: dshm
         {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
         {{- range $nodeset.persistence.existingDataClaims }}

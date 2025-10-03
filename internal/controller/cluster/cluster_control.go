@@ -22,10 +22,10 @@ import (
 	"github.com/SlinkyProject/slurm-client/pkg/object"
 	slurmtypes "github.com/SlinkyProject/slurm-client/pkg/types"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	nodesetcontroller "github.com/SlinkyProject/slurm-operator/internal/controller/nodeset"
-	"github.com/SlinkyProject/slurm-operator/internal/resources"
-	"github.com/SlinkyProject/slurm-operator/internal/utils"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
+	nodesetcontroller "github.com/togethercomputer/slurm-operator/internal/controller/nodeset"
+	"github.com/togethercomputer/slurm-operator/internal/resources"
+	"github.com/togethercomputer/slurm-operator/internal/utils"
 )
 
 // ClusterControl implements the control logic for synchronizing Clusters and their children Pods. It is implemented

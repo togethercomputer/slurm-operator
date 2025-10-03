@@ -27,6 +27,8 @@ spec:
       hostname: {{ include "slurm-operator.name" . }}
       priorityClassName: {{ default "" .Values.priorityClassName }}
       serviceAccountName: {{ include "slurm-operator.operator.serviceAccountName" . }}
+      tolerations: {{- toYaml .Values.operator.tolerations | nindent 6 }}
+      affinity: {{- toYaml .Values.operator.affinity | nindent 6 }}
       {{- include "slurm-operator.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: slurm-operator

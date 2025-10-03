@@ -9,4 +9,5 @@ const (
 	// Note that this is honored on a best-effort basis, and so it does not
 	// offer guarantees on Node scheduling order.
 	NodeWeight = "slinky.slurm.net/node-weight"
+	NodeCordon = "slinky.slurm.net/node-cordon"
 )

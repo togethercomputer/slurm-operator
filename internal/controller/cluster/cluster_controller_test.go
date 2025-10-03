@@ -16,7 +16,7 @@ import (
 	"github.com/SlinkyProject/slurm-client/pkg/object"
 	slurmtypes "github.com/SlinkyProject/slurm-client/pkg/types"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
