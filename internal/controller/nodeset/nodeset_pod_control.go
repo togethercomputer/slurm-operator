@@ -193,11 +193,11 @@ func (spc *NodeSetPodControl) updateSlurmNode(
 		delete(pod.Annotations, annotations.PodCordon)
 		err := spc.Update(ctx, pod)
 		spc.recordPodEvent("uncordon", set, pod, err)
-		
+
 		if err != nil {
 			return err
 		}
-		
+
 		if spc.isNodeSetPodDrain(ctx, set, pod) {
 			clusterName := types.NamespacedName{
 				Namespace: set.GetNamespace(),
@@ -213,27 +213,27 @@ func (spc *NodeSetPodControl) updateSlurmNode(
 					}
 					return err
 				}
-	
-				logger.Info("Undrain Slurm Node", "slurmNode", slurmNode, "Pod", pod) 
+
+				logger.Info("Undrain Slurm Node", "slurmNode", slurmNode, "Pod", pod)
 				slurmNode.State.Insert(slurmtypes.NodeStateUNDRAIN)
 				if err := slurmClient.Update(ctx, slurmNode); err != nil {
 					if err.Error() == http.StatusText(http.StatusNotFound) {
 						return nil
 					}
 					return err
-				}	
+				}
 			}
 		}
-	} else {	
+	} else {
 		node := &corev1.Node{}
 		if err := spc.Get(ctx, client.ObjectKey{Namespace: set.Namespace, Name: pod.Spec.Hostname}, node); err != nil {
 			return err
 		}
-		
+
 		if node.Annotations == nil {
 			node.Annotations = make(map[string]string)
 		}
-			
+
 		if spc.isNodeSetPodDrain(ctx, set, pod) {
 			// Annotate the cluster to indicate nodes that are cordoned
 			logger.Info("Node is drained, cordoning node")
@@ -243,7 +243,7 @@ func (spc *NodeSetPodControl) updateSlurmNode(
 			logger.Info("Node is not drained, un-cordoning node")
 			node.Annotations[annotations.NodeCordon] = "false"
 		}
-		
+
 		// Update node
 		if err := spc.Update(ctx, node); err != nil {
 			return err
