@@ -31,18 +31,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-<<<<<<< Updated upstream
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/errors"
-	"github.com/SlinkyProject/slurm-operator/internal/resources"
-	"github.com/SlinkyProject/slurm-operator/internal/utils"
-=======
 	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
 	"github.com/togethercomputer/slurm-operator/internal/annotations"
 	"github.com/togethercomputer/slurm-operator/internal/errors"
 	"github.com/togethercomputer/slurm-operator/internal/resources"
 	"github.com/togethercomputer/slurm-operator/internal/utils"
->>>>>>> Stashed changes
 )
 
 // NodeSetControl implements the control logic for synchronizing NodeSets and their children Pods. It is implemented
