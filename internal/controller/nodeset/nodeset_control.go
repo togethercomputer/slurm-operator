@@ -434,7 +434,9 @@ func (nsc *defaultNodeSetControl) processNodeSetPod(
 	}
 
 	stateMatch := true
-	if isNodeSetPodCordon(pods[i]) || nsc.podControl.isNodeSetPodDrain(ctx, set, pods[i]) || !nsc.podControl.isNodeSetPodDrain(ctx, set, pods[i]) && node.Annotations != nil && node.Annotations[annotations.NodeCordon] == "true" {
+	drained := nsc.podControl.isNodeSetPodDrain(ctx, set, pods[i])
+	annotation := node.Annotations != nil && node.Annotations[annotations.NodeCordon] == "true"
+	if isNodeSetPodCordon(pods[i]) || drained || !drained && annotation {
 		stateMatch = false
 	}
 
