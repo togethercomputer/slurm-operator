@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
+	"github.com/togethercomputer/slurm-operator/internal/annotations"
 	"github.com/togethercomputer/slurm-operator/internal/errors"
 	"github.com/togethercomputer/slurm-operator/internal/resources"
 	"github.com/togethercomputer/slurm-operator/internal/utils"
@@ -426,8 +427,14 @@ func (nsc *defaultNodeSetControl) processNodeSetPod(
 		}
 	}
 
+	// We need this to check if the node is annotated
+	node := &corev1.Node{}
+	if err := nsc.Get(ctx, client.ObjectKey{Namespace: set.Namespace, Name: pods[i].Spec.Hostname}, node); err != nil {
+		return err
+	}
+
 	stateMatch := true
-	if isNodeSetPodCordon(pods[i]) || nsc.podControl.isNodeSetPodDrain(ctx, set, pods[i]) {
+	if isNodeSetPodCordon(pods[i]) || nsc.podControl.isNodeSetPodDrain(ctx, set, pods[i]) || !nsc.podControl.isNodeSetPodDrain(ctx, set, pods[i]) && node.Annotations != nil && node.Annotations[annotations.NodeCordon] == "true" {
 		stateMatch = false
 	}
 
