@@ -43,6 +43,8 @@ type SlurmControlInterface interface {
 	IsNodeDrain(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error)
 	// IsNodeDrained checks if the slurm node is drained.
 	IsNodeDrained(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error)
+	// IsNodeDownForUnresponsive checks if the slurm node is unresponsive
+	IsNodeDownForUnresponsive(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error)
 	// CalculateNodeStatus returns the current state of the registered slurm nodes.
 	CalculateNodeStatus(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pods []*corev1.Pod) (SlurmNodeStatus, error)
 	// GetNodeDeadlines returns a map of node to its deadline time.Time calculated from running jobs.
@@ -188,11 +190,25 @@ func (r *realSlurmControl) MakeNodeDrain(ctx context.Context, nodeset *slinkyv1a
 		return err
 	}
 
+	// If the reason is not empty, prefix it with nodeReasonPrefix
+	prefixedReason := ""
+	if reason != "" {
+		prefixedReason = nodeReasonPrefix + " " + reason
+	}
+
+	// If Slurm node is already drained and the reasons match, no need to drain it again
+	nodeReason := ptr.Deref(slurmNode.Reason, "")
+	if slurmNode.GetStateAsSet().Has(api.V0043NodeStateDRAIN) && nodeReason == prefixedReason {
+		logger.V(1).Info("Node is already drained, skipping drain request",
+			"node", slurmNode.GetKey(), "nodeState", slurmNode.State, "nodeReason", nodeReason)
+		return nil
+	}
+
 	logger.V(1).Info("make slurm node drain",
 		"pod", klog.KObj(pod))
 	req := api.V0043UpdateNodeMsg{
 		State:  ptr.To([]api.V0043UpdateNodeMsgState{api.V0043UpdateNodeMsgStateDRAIN}),
-		Reason: ptr.To(nodeReasonPrefix + " " + reason),
+		Reason: ptr.To(prefixedReason),
 	}
 	if err := slurmClient.Update(ctx, slurmNode, req); err != nil {
 		if tolerateError(err) {
@@ -230,17 +246,24 @@ func (r *realSlurmControl) MakeNodeUndrain(ctx context.Context, nodeset *slinkyv
 		logger.V(1).Info("Node is already undrained, skipping undrain request",
 			"node", slurmNode.GetKey(), "nodeState", slurmNode.State)
 		return nil
-	} else if nodeReason != "" && !strings.Contains(nodeReason, nodeReasonPrefix) {
+	}
+	if nodeReason != "" && !strings.HasPrefix(nodeReason, nodeReasonPrefix) {
 		logger.Info("Node was drained but not by slurm-operator, skipping undrain request",
 			"node", slurmNode.GetKey(), "nodeReason", nodeReason)
 		return nil
+	}
+
+	// If the reason is not empty, prefix it with nodeReasonPrefix
+	prefixedReason := ""
+	if reason != "" {
+		prefixedReason = nodeReasonPrefix + " " + reason
 	}
 
 	logger.V(1).Info("make slurm node undrain",
 		"pod", klog.KObj(pod))
 	req := api.V0043UpdateNodeMsg{
 		State:  ptr.To([]api.V0043UpdateNodeMsgState{api.V0043UpdateNodeMsgStateUNDRAIN}),
-		Reason: ptr.To(nodeReasonPrefix + " " + reason),
+		Reason: ptr.To(prefixedReason),
 	}
 	if err := slurmClient.Update(ctx, slurmNode, req); err != nil {
 		if tolerateError(err) {
@@ -301,6 +324,34 @@ func (r *realSlurmControl) IsNodeDrained(ctx context.Context, nodeset *slinkyv1a
 	isDrained := isDrain && !isBusy
 
 	return isDrained, nil
+}
+
+// IsNodeDownForUnresponsive implements SlurmControlInterface.
+func (r *realSlurmControl) IsNodeDownForUnresponsive(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error) {
+	logger := log.FromContext(ctx)
+
+	slurmClient := r.lookupClient(nodeset)
+	if slurmClient == nil {
+		logger.V(2).Info("no client for nodeset, cannot do IsNodeDrained()",
+			"pod", klog.KObj(pod))
+		return true, nil
+	}
+
+	slurmNode := &slurmtypes.V0043Node{}
+	key := slurmobject.ObjectKey(nodesetutils.GetNodeName(pod))
+	if err := slurmClient.Get(ctx, key, slurmNode); err != nil {
+		if tolerateError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	isDown := slurmNode.GetStateAsSet().Has(api.V0043NodeStateDOWN)
+	reasonNotResponding := strings.Contains(ptr.Deref(slurmNode.Reason, ""), "Not responding")
+
+	wasUnresponsive := isDown && reasonNotResponding
+
+	return wasUnresponsive, nil
 }
 
 type SlurmNodeStatus struct {
