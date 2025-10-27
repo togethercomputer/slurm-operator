@@ -299,8 +299,16 @@ func (r *NodeSetReconciler) syncCordon(
 		if err != nil {
 			return err
 		}
+		ourReason, err := r.slurmControl.IsNodeReasonOurs(ctx, nodeset, pod)
+		if err != nil {
+			return err
+		}
 
 		switch {
+		// If Slurm node was externally set into a state, preserve it
+		case !ourReason, slurmNodeIsUnresponsive:
+			return nil
+
 		// If Kubernetes node is cordoned but pod isn't, cordon the pod
 		case nodeIsCordoned:
 			logger.Info("Kubernetes node cordoned externally, cordoning pod",
@@ -317,12 +325,9 @@ func (r *NodeSetReconciler) syncCordon(
 			if err := r.Get(ctx, key, node); err != nil {
 				return fmt.Errorf("failed to get node: %w", err)
 			}
-
-			value, ok := node.Annotations[slinkyv1alpha1.AnnotationNodeCordonReason]
-			if ok {
-				logger.V(1).Info("makePodCordonAndDrain() reason overridden by annotation",
-					"reason", reason,
-					"annotation", fmt.Sprintf("%s=%s", slinkyv1alpha1.AnnotationNodeCordonReason, value))
+			if value, ok := node.Annotations[slinkyv1alpha1.AnnotationNodeCordonReason]; ok {
+				logger.V(1).Info("Slurm node drain reason overridden by Kubernetes node annotation",
+					"reason", value)
 				reason = value
 			}
 
@@ -340,10 +345,6 @@ func (r *NodeSetReconciler) syncCordon(
 		// If pod is uncordoned, undrain the Slurm node
 		case !podIsCordoned:
 			reason := fmt.Sprintf("Pod (%s) was uncordoned", klog.KObj(pod))
-			if slurmNodeIsUnresponsive {
-				// Preserve Slurm node reason
-				reason = ""
-			}
 			if err := r.slurmControl.MakeNodeUndrain(ctx, nodeset, pod, reason); err != nil {
 				return err
 			}
@@ -755,6 +756,9 @@ func (r *NodeSetReconciler) makePodCordon(
 	if err := r.Patch(ctx, toUpdate, client.StrategicMergeFrom(pod)); err != nil {
 		return err
 	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -791,39 +795,44 @@ func (r *NodeSetReconciler) makePodUncordon(ctx context.Context, pod *corev1.Pod
 	if err := r.Patch(ctx, toUpdate, client.StrategicMergeFrom(pod)); err != nil {
 		return err
 	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-// syncPodUncordon handles uncordoning with Kubernetes node state synchronization
+// syncPodUncordon handles uncordoning with Kubernetes and Slurm node state synchronization
 func (r *NodeSetReconciler) syncPodUncordon(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) error {
 	logger := log.FromContext(ctx)
 
-	// Kubernetes skip uncordoning pods on externally cordoned nodes
-	if r.shouldSkipUncordon(ctx, pod) {
+	// The Kubernetes nodes which the pod is on may have been cordoned
+	if r.isNodeCordoned(ctx, pod) {
 		logger.V(1).Info("Skipping uncordon for pod on externally cordoned node",
 			"pod", klog.KObj(pod), "node", pod.Spec.NodeName)
-		return nil // Skip uncordoning this pod
+		return nil // Skip
+	}
+
+	// Slurm node may have been externally set in down, drain, fail, etc...
+	if ok, err := r.slurmControl.IsNodeReasonOurs(ctx, nodeset, pod); err != nil {
+		return err
+	} else if !ok {
+		logger.V(1).Info("Skipping uncordon for pod which has an externally set reason",
+			"pod", klog.KObj(pod))
+		return nil // Skip
 	}
 
 	return r.makePodUncordonAndUndrain(ctx, nodeset, pod, "")
 }
 
-// shouldSkipUncordon checks if a pod should skip uncordoning due to external node cordoning
-func (r *NodeSetReconciler) shouldSkipUncordon(ctx context.Context, pod *corev1.Pod) bool {
-	// Check if pod is currently cordoned
-	if !podutils.IsPodCordon(pod) {
-		return false // Pod is not cordoned, no need to skip
-	}
-
-	// Check if the Kubernetes node is externally cordoned
+// isNodeCordoned returns true if the pod's node is cordoned
+func (r *NodeSetReconciler) isNodeCordoned(ctx context.Context, pod *corev1.Pod) bool {
 	node := &corev1.Node{}
 	nodeKey := types.NamespacedName{Name: pod.Spec.NodeName}
 	if err := r.Get(ctx, nodeKey, node); err != nil {
-		return false // Can't get node info, don't skip
+		return false
 	}
 
-	// Skip uncordoning if node is externally cordoned
 	return node.Spec.Unschedulable
 }
 

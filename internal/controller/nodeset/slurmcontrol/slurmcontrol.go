@@ -45,6 +45,8 @@ type SlurmControlInterface interface {
 	IsNodeDrained(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error)
 	// IsNodeDownForUnresponsive checks if the slurm node is unresponsive
 	IsNodeDownForUnresponsive(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error)
+	// IsNodeReasonOurs reports if the node reason was set by the operator.
+	IsNodeReasonOurs(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error)
 	// CalculateNodeStatus returns the current state of the registered slurm nodes.
 	CalculateNodeStatus(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pods []*corev1.Pod) (SlurmNodeStatus, error)
 	// GetNodeDeadlines returns a map of node to its deadline time.Time calculated from running jobs.
@@ -240,16 +242,10 @@ func (r *realSlurmControl) MakeNodeUndrain(ctx context.Context, nodeset *slinkyv
 		return err
 	}
 
-	nodeReason := ptr.Deref(slurmNode.Reason, "")
 	if !slurmNode.GetStateAsSet().Has(api.V0043NodeStateDRAIN) ||
 		slurmNode.GetStateAsSet().Has(api.V0043NodeStateUNDRAIN) {
 		logger.V(1).Info("Node is already undrained, skipping undrain request",
 			"node", slurmNode.GetKey(), "nodeState", slurmNode.State)
-		return nil
-	}
-	if nodeReason != "" && !strings.HasPrefix(nodeReason, nodeReasonPrefix) {
-		logger.Info("Node was drained but not by slurm-operator, skipping undrain request",
-			"node", slurmNode.GetKey(), "nodeReason", nodeReason)
 		return nil
 	}
 
@@ -319,6 +315,8 @@ func (r *realSlurmControl) IsNodeDrained(ctx context.Context, nodeset *slinkyv1a
 		return false, err
 	}
 
+	// Drained is when a node has the DRAIN flag and is not doing any work (e.g. job step, prolog, epilog).
+	// https://github.com/SchedMD/slurm/blob/slurm-25.05/src/common/slurm_protocol_defs.c#L3500
 	isBusy := slurmNode.GetStateAsSet().HasAny(api.V0043NodeStateALLOCATED, api.V0043NodeStateMIXED, api.V0043NodeStateCOMPLETING)
 	isDrain := slurmNode.GetStateAsSet().Has(api.V0043NodeStateDRAIN) && !slurmNode.GetStateAsSet().Has(api.V0043NodeStateUNDRAIN)
 	isDrained := isDrain && !isBusy
@@ -346,12 +344,43 @@ func (r *realSlurmControl) IsNodeDownForUnresponsive(ctx context.Context, nodese
 		return false, err
 	}
 
+	// Slurm sets unresponsive nodes as `State=DOWN`, `Reason+="Not responding"`.
+	// https://github.com/SchedMD/slurm/blob/slurm-25.05/src/slurmctld/ping_nodes.c#L243
 	isDown := slurmNode.GetStateAsSet().Has(api.V0043NodeStateDOWN)
 	reasonNotResponding := strings.Contains(ptr.Deref(slurmNode.Reason, ""), "Not responding")
-
 	wasUnresponsive := isDown && reasonNotResponding
 
 	return wasUnresponsive, nil
+}
+
+// IsNodeReasonOurs implements SlurmControlInterface.
+func (r *realSlurmControl) IsNodeReasonOurs(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet, pod *corev1.Pod) (bool, error) {
+	logger := log.FromContext(ctx)
+
+	slurmClient := r.lookupClient(nodeset)
+	if slurmClient == nil {
+		logger.V(2).Info("no client for nodeset, cannot do IsNodeReasonOurs()",
+			"pod", klog.KObj(pod))
+		return true, nil
+	}
+
+	slurmNode := &slurmtypes.V0043Node{}
+	key := slurmobject.ObjectKey(nodesetutils.GetNodeName(pod))
+	if err := slurmClient.Get(ctx, key, slurmNode); err != nil {
+		if tolerateError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	// The operator will always prefix the node reason.
+	// External sources may not have a prefix or a different one.
+	nodeReason := ptr.Deref(slurmNode.Reason, "")
+	if nodeReason != "" && !strings.HasPrefix(nodeReason, nodeReasonPrefix) {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 type SlurmNodeStatus struct {
