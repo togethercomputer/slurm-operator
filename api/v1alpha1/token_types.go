@@ -8,9 +8,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 const (
 	TokenKind = "Token"
 )
@@ -22,9 +19,6 @@ var (
 
 // TokenSpec defines the desired state of Token
 type TokenSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// Slurm `auth/jwt` JWT HS256 key authentication.
 	// +required
 	JwtHs256KeyRef JwtSecretKeySelector `json:"jwtHs256KeyRef,omitzero"`
@@ -50,9 +44,6 @@ type TokenSpec struct {
 
 // TokenStatus defines the observed state of Token
 type TokenStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// IssuedAt indicates the time when the JWT was issued.
 	IssuedAt *metav1.Time `json:"issuedAt,omitempty"`
 
@@ -66,6 +57,7 @@ type TokenStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion:warning="v1alpha1 is deprecated, use v1beta1."
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=tokens;jwt
 // +kubebuilder:printcolumn:name="USER",type="string",JSONPath=".spec.username",description="The username issued to the JWT."

@@ -36,7 +36,8 @@ Table of Contents
   - `Quick Start <#quick-start>`__
   - `Upgrades <#upgrades>`__
 
-    - `0.X Releases <#0x-releases>`__
+    - `1.Y Releases <#1y-releases>`__
+    - `0.Y Releases <#0y-releases>`__
 
   - `Documentation <#documentation>`__
   - `Support and Development <#support-and-development>`__
@@ -225,13 +226,48 @@ For additional instructions, see the
 Upgrades
 --------
 
-0.X Releases
+Slinky versions are expressed as **X.Y.Z**, where **X** is the major
+version, **Y** is the minor version, and **Z** is the patch version,
+following `Semantic Versioning <https://semver.org/>`__ terminology.
+
+See `versioning <versioning.html>`__ for more details.
+
+1.Y Releases
 ~~~~~~~~~~~~
 
 Breaking changes may be introduced into newer
 `CRDs <https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#customresourcedefinitions>`__.
-To upgrade between these versions, uninstall all Slinky charts and
-delete Slinky CRDs, then install the new release like normal.
+To upgrade between ``v1.Y`` versions (e.g. ``v1.0.Z`` => ``v1.1.Z``),
+upgrade the slurm-operator-crds chart followed by the slurm-operator
+chart. Any Slurm charts will automatically be handled via CRD
+conversion; no further action is required. It is still recommended to
+upgrade Slurm charts to make use of the new features and functionality.
+
+.. code:: bash
+
+   helm upgrade slurm-operator-crds oci://ghcr.io/slinkyproject/charts/slurm-operator-crds
+   helm upgrade slurm-operator oci://ghcr.io/slinkyproject/charts/slurm-operator \
+     --namespace=slinky
+
+To make use of new Slinky CRD features, please review changes made to
+the CRDs and the Slurm chart. Update your values.yaml appropriately and
+upgrade the chart.
+
+.. code:: sh
+
+   helm upgrade slurm oci://ghcr.io/slinkyproject/charts/slurm \
+     --namespace=slurm
+
+.. _y-releases-1:
+
+0.Y Releases
+~~~~~~~~~~~~
+
+Breaking changes may be introduced into existing
+`CRDs <https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#customresourcedefinitions>`__.
+To upgrade between ``v0.Y`` versions (e.g. ``v0.1.Z`` => ``v0.2.Z``),
+uninstall all Slinky charts and delete Slinky CRDs, then install the new
+release like normal.
 
 .. code:: bash
 
@@ -307,6 +343,14 @@ limitations under the License.
     :caption: Getting started
 
     installation.md
+
+.. toctree::
+    :maxdepth: 2
+    :glob:
+    :hidden:
+    :caption: Versioning
+
+    versioning.md
 
 .. toctree::
     :maxdepth: 2

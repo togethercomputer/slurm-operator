@@ -1,20 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (C) SchedMD LLC.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha1
+package webhook
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("LoginSet Webhook", func() {
-	Context("When creating LoginSet under Defaulting Webhook", func() {
-		It("Should fill in the default value if a required field is empty", func() {
-			// TODO(user): Add your logic here
-		})
-	})
-
-	Context("When creating LoginSet under Validating Webhook", func() {
+var _ = Describe("Accounting Webhook", func() {
+	Context("When creating Accounting under Validating Webhook", func() {
 		It("Should deny if a required field is empty", func() {
 			// TODO(user): Add your logic here
 		})
