@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (C) SchedMD LLC.
 // SPDX-License-Identifier: Apache-2.0
 
-package nodeset
+package eventhandler
 
 import (
 	"context"
@@ -9,8 +9,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -18,11 +16,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	"github.com/SlinkyProject/slurm-operator/internal/controller/nodeset/indexes"
 	nodesetutils "github.com/SlinkyProject/slurm-operator/internal/controller/nodeset/utils"
 )
 
-func Test_nodeEventHandler_Create(t *testing.T) {
-	utilruntime.Must(slinkyv1beta1.AddToScheme(clientgoscheme.Scheme))
+func Test_NodeEventHandler_Create(t *testing.T) {
 	type fields struct {
 		Reader client.Reader
 	}
@@ -52,19 +50,16 @@ func Test_nodeEventHandler_Create(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &nodeEventHandler{
-				Reader: tt.fields.Reader,
-			}
+			h := NewNodeEventHandler(tt.fields.Reader)
 			h.Create(tt.args.ctx, tt.args.evt, tt.args.q)
 			if got := tt.args.q.Len(); got != tt.want {
-				t.Errorf("nodeEventHandler.Create() = %v, want %v", got, tt.want)
+				t.Errorf("NodeEventHandler.Create() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func Test_nodeEventHandler_Delete(t *testing.T) {
-	utilruntime.Must(slinkyv1beta1.AddToScheme(clientgoscheme.Scheme))
+func Test_NodeEventHandler_Delete(t *testing.T) {
 	type fields struct {
 		Reader client.Reader
 	}
@@ -94,19 +89,16 @@ func Test_nodeEventHandler_Delete(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &nodeEventHandler{
-				Reader: tt.fields.Reader,
-			}
+			h := NewNodeEventHandler(tt.fields.Reader)
 			h.Delete(tt.args.ctx, tt.args.evt, tt.args.q)
 			if got := tt.args.q.Len(); got != tt.want {
-				t.Errorf("nodeEventHandler.Delete() = %v, want %v", got, tt.want)
+				t.Errorf("NodeEventHandler.Delete() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func Test_nodeEventHandler_Generic(t *testing.T) {
-	utilruntime.Must(slinkyv1beta1.AddToScheme(clientgoscheme.Scheme))
+func Test_NodeEventHandler_Generic(t *testing.T) {
 	type fields struct {
 		Reader client.Reader
 	}
@@ -136,19 +128,16 @@ func Test_nodeEventHandler_Generic(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &nodeEventHandler{
-				Reader: tt.fields.Reader,
-			}
+			h := NewNodeEventHandler(tt.fields.Reader)
 			h.Generic(tt.args.ctx, tt.args.evt, tt.args.q)
 			if got := tt.args.q.Len(); got != tt.want {
-				t.Errorf("nodeEventHandler.Generic() = %v, want %v", got, tt.want)
+				t.Errorf("NodeEventHandler.Generic() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func Test_nodeEventHandler_Update(t *testing.T) {
-	utilruntime.Must(slinkyv1beta1.AddToScheme(clientgoscheme.Scheme))
+func Test_NodeEventHandler_Update(t *testing.T) {
 	nodeset := newNodeSet("foo", "slurm", 0)
 	type fields struct {
 		Reader client.Reader
@@ -167,7 +156,7 @@ func Test_nodeEventHandler_Update(t *testing.T) {
 		{
 			name: "Node cordoned - should enqueue NodeSet",
 			fields: fields{
-				Reader: newFakeClientBuilderWithIndexes(
+				Reader: indexes.NewFakeClientBuilderWithIndexes(
 					nodeset,
 					newNodeSetPod(nodeset, 0, "test-node"),
 					newNodeSetPod(nodeset, 1, "test-node2"),
@@ -186,7 +175,7 @@ func Test_nodeEventHandler_Update(t *testing.T) {
 		{
 			name: "Node uncordoned - should enqueue NodeSet",
 			fields: fields{
-				Reader: newFakeClientBuilderWithIndexes(
+				Reader: indexes.NewFakeClientBuilderWithIndexes(
 					nodeset,
 					newNodeSetPod(nodeset, 0, "test-node"),
 				).Build(),
@@ -204,7 +193,7 @@ func Test_nodeEventHandler_Update(t *testing.T) {
 		{
 			name: "No cordon change - should not enqueue",
 			fields: fields{
-				Reader: newFakeClientBuilderWithIndexes().Build(),
+				Reader: indexes.NewFakeClientBuilderWithIndexes().Build(),
 			},
 			args: args{
 				ctx: context.TODO(),
@@ -219,7 +208,7 @@ func Test_nodeEventHandler_Update(t *testing.T) {
 		{
 			name: "No worker pods on node - should not enqueue",
 			fields: fields{
-				Reader: newFakeClientBuilderWithIndexes().Build(), // No pods
+				Reader: indexes.NewFakeClientBuilderWithIndexes().Build(), // No pods
 			},
 			args: args{
 				ctx: context.TODO(),
@@ -234,12 +223,10 @@ func Test_nodeEventHandler_Update(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &nodeEventHandler{
-				Reader: tt.fields.Reader,
-			}
+			h := NewNodeEventHandler(tt.fields.Reader)
 			h.Update(tt.args.ctx, tt.args.evt, tt.args.q)
 			if got := tt.args.q.Len(); got != tt.want {
-				t.Errorf("nodeEventHandler.Update() = %v, want %v", got, tt.want)
+				t.Errorf("NodeEventHandler.Update() = %v, want %v", got, tt.want)
 			}
 		})
 	}
