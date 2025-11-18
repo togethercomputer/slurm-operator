@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
-	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
-	"github.com/togethercomputer/slurm-operator/internal/annotations"
+	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	"github.com/SlinkyProject/slurm-operator/internal/annotations"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

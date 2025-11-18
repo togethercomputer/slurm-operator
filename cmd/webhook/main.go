@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
+	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 

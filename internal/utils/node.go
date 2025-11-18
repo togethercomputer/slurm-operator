@@ -6,7 +6,7 @@ package utils
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/togethercomputer/slurm-operator/internal/annotations"
+	"github.com/SlinkyProject/slurm-operator/internal/annotations"
 )
 
 type NodeByWeight []*corev1.Node
