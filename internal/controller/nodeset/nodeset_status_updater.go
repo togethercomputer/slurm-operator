@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
-	"github.com/togethercomputer/slurm-operator/internal/utils"
+	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	"github.com/SlinkyProject/slurm-operator/internal/utils"
 )
 
 // NodeSetStatusUpdaterInterface is an interface used to update the NodeSetStatus associated with a StatefulSet.

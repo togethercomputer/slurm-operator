@@ -26,10 +26,10 @@ import (
 	"github.com/SlinkyProject/slurm-client/pkg/object"
 	slurmtypes "github.com/SlinkyProject/slurm-client/pkg/types"
 
-	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
-	"github.com/togethercomputer/slurm-operator/internal/annotations"
-	"github.com/togethercomputer/slurm-operator/internal/errors"
-	"github.com/togethercomputer/slurm-operator/internal/resources"
+	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	"github.com/SlinkyProject/slurm-operator/internal/annotations"
+	"github.com/SlinkyProject/slurm-operator/internal/errors"
+	"github.com/SlinkyProject/slurm-operator/internal/resources"
 )
 
 // NodeSetPodControlObjectManager abstracts the manipulation of Pods and PVCs. The real controller implements this
@@ -193,60 +193,35 @@ func (spc *NodeSetPodControl) updateSlurmNode(
 		delete(pod.Annotations, annotations.PodCordon)
 		err := spc.Update(ctx, pod)
 		spc.recordPodEvent("uncordon", set, pod, err)
+		return err
+	}
 
-		if err != nil {
-			return err
+	if spc.isNodeSetPodDrain(ctx, set, pod) {
+		clusterName := types.NamespacedName{
+			Namespace: set.GetNamespace(),
+			Name:      set.Spec.ClusterName,
 		}
-
-		if spc.isNodeSetPodDrain(ctx, set, pod) {
-			clusterName := types.NamespacedName{
-				Namespace: set.GetNamespace(),
-				Name:      set.Spec.ClusterName,
-			}
-			slurmClient := spc.slurmClusters.Get(clusterName)
-			if slurmClient != nil && !isNodeSetPodDelete(pod) {
-				objectKey := object.ObjectKey(pod.Spec.Hostname)
-				slurmNode := &slurmtypes.Node{}
-				if err := slurmClient.Get(ctx, objectKey, slurmNode); err != nil {
-					if err.Error() == http.StatusText(http.StatusNotFound) {
-						return nil
-					}
-					return err
+		slurmClient := spc.slurmClusters.Get(clusterName)
+		if slurmClient != nil && !isNodeSetPodDelete(pod) {
+			objectKey := object.ObjectKey(pod.Spec.Hostname)
+			slurmNode := &slurmtypes.Node{}
+			if err := slurmClient.Get(ctx, objectKey, slurmNode); err != nil {
+				if err.Error() == http.StatusText(http.StatusNotFound) {
+					return nil
 				}
-
-				logger.Info("Undrain Slurm Node", "slurmNode", slurmNode, "Pod", pod)
-				slurmNode.State.Insert(slurmtypes.NodeStateUNDRAIN)
-				if err := slurmClient.Update(ctx, slurmNode); err != nil {
-					if err.Error() == http.StatusText(http.StatusNotFound) {
-						return nil
-					}
-					return err
-				}
+				return err
 			}
-		}
-	} else {
-		node := &corev1.Node{}
-		if err := spc.Get(ctx, client.ObjectKey{Namespace: set.Namespace, Name: pod.Spec.Hostname}, node); err != nil {
-			return err
-		}
 
-		if node.Annotations == nil {
-			node.Annotations = make(map[string]string)
-		}
+			logger.Info("Undrain Slurm Node", "slurmNode", slurmNode, "Pod", pod)
+			slurmNode.State.Insert(slurmtypes.NodeStateUNDRAIN)
+			if err := slurmClient.Update(ctx, slurmNode); err != nil {
+				if err.Error() == http.StatusText(http.StatusNotFound) {
+					return nil
+				}
+				return err
+			}
 
-		if spc.isNodeSetPodDrain(ctx, set, pod) {
-			// Annotate the cluster to indicate nodes that are cordoned
-			logger.Info("Node is drained, cordoning node")
-			node.Annotations[annotations.NodeCordon] = "true"
-		} else {
-			// Annotate the cluster to indicate nodes that are not drained
-			logger.Info("Node is not drained, un-cordoning node")
-			node.Annotations[annotations.NodeCordon] = "false"
-		}
-
-		// Update node
-		if err := spc.Update(ctx, node); err != nil {
-			return err
+			return nil
 		}
 	}
 

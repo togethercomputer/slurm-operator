@@ -46,10 +46,6 @@ spec:
       affinity:
         {{- .Values.accounting.affinity | toYaml | nindent 8 }}
       {{- end }}{{- /* if .Values.accounting.affinity */}}
-      {{- if .Values.accounting.tolerations }}
-      tolerations:
-        {{- .Values.accounting.tolerations | toYaml | nindent 8 }}
-      {{- end }}{{- /* if .Values.accounting.tolerations */}}
       {{- include "slurm.imagePullSecrets" $ | nindent 6 }}
       initContainers:
         - name: init

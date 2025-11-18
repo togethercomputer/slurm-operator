@@ -38,10 +38,6 @@ spec:
       affinity:
         {{- .Values.restapi.affinity | toYaml | nindent 8 }}
       {{- end }}{{- /* if .Values.restapi.affinity */}}
-      {{- if .Values.restapi.tolerations }}
-      tolerations:
-        {{- .Values.restapi.tolerations | toYaml | nindent 8 }}
-      {{- end }}{{- /* if .Values.restapi.tolerations */}}
       {{- include "slurm.imagePullSecrets" . | nindent 6 }}
       initContainers:
         - name: init

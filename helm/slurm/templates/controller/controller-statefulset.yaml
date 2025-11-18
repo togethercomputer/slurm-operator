@@ -39,10 +39,6 @@ spec:
       affinity:
         {{- .Values.controller.affinity | toYaml | nindent 8 }}
       {{- end }}{{- /* if .Values.controller.affinity */}}
-      {{- if .Values.controller.tolerations }}
-      tolerations:
-        {{- .Values.controller.tolerations | toYaml | nindent 8 }}
-      {{- end }}{{- /* if .Values.controller.tolerations */}}
       {{- include "slurm.imagePullSecrets" . | nindent 6 }}
       {{- if .Values.accounting.enabled }}
       securityContext:
