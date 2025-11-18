@@ -29,6 +29,8 @@ spec:
       hostname: {{ include "slurm-operator.webhook.name" . }}
       priorityClassName: {{ default "" .Values.priorityClassName }}
       serviceAccountName: {{ include "slurm-operator.webhook.serviceAccountName" . }}
+      tolerations: {{- toYaml .Values.webhook.tolerations | nindent 6 }}
+      affinity: {{- toYaml .Values.webhook.affinity | nindent 6 }}
       {{- include "slurm-operator.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: webhook

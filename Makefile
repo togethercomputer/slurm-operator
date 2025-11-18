@@ -53,7 +53,7 @@ endif
 OPERATOR_SDK_VERSION ?= v1.36.1
 
 # Image URL to use all building/pushing image targets
-IMG ?= slinky.slurm.net/slurm-operator:$(VERSION)
+IMG ?= ebennerv/slurm-operator:$(VERSION)
 
 # Set the namespaces that helm tests will run against
 SLURM_NAMESPACE ?= slurm

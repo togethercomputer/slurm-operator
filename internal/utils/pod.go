@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
-	"github.com/SlinkyProject/slurm-operator/internal/annotations"
+	"github.com/togethercomputer/slurm-operator/internal/annotations"
 )
 
 type PodByCreationTimestampAndPhase []*corev1.Pod

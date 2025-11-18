@@ -108,6 +108,8 @@ spec:
           ports:
             - name: slurmd
               containerPort: {{ include "slurm.compute.port" $ }}
+            - name: ssh
+              containerPort: 22
           startupProbe:
             exec:
               command:
@@ -135,6 +137,14 @@ spec:
             - name: {{ $vct.metadata.name }}
               mountPath: {{ $vct.spec.mountPath | default (printf "/mnt/%s" $vct.metadata.name ) }}
             {{- end }}{{- /* range $vct := $nodeset.volumeClaimTemplates */}}
+            - mountPath: /dev/shm
+              name: dshm
+            {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
+            {{- range $nodeset.persistence.existingDataClaims }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+            {{- end }}{{- /* range $nodeset.persistence.existingDataClaims */}}
+            {{- end }}{{- /* if $nodeset.persistence.existingDataClaims */}}
       volumes:
         {{- include "slurm.volumes" $ | nindent 8 }}
         - name: slurm-config
@@ -143,6 +153,17 @@ spec:
             sources:
               - secret:
                   name: {{ include "slurm.auth.secretName" $ }}
+        - emptyDir:
+            medium: Memory
+            sizeLimit: {{ $nodeset.shmSize }}
+          name: dshm
+        {{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
+        {{- range $nodeset.persistence.existingDataClaims }}
+        - name: {{ .name }}
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+        {{- end }}{{- /* range $nodeset.persistence.existingDataClaims */}}
+        {{- end }}{{- /* if $nodeset.persistence.existingDataClaims */}}
   {{- if $nodeset.volumeClaimTemplates }}
   volumeClaimTemplates:
     {{- $nodeset.volumeClaimTemplates | toYaml | nindent 4 }}
