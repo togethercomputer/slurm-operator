@@ -8,7 +8,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	slinkyv1alpha1 "github.com/togethercomputer/slurm-operator/api/v1alpha1"
 )
 
 func TestKeyFunc(t *testing.T) {

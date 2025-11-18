@@ -1,8 +1,6 @@
-module github.com/SlinkyProject/slurm-operator
+module github.com/togethercomputer/slurm-operator
 
-go 1.22.0
-
-toolchain go1.22.5
+go 1.25.0
 
 require (
 	github.com/SlinkyProject/slurm-client v0.1.0-20241108145209-7bfdd4923f75
@@ -126,3 +124,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace k8s.io/kubernetes => k8s.io/kubernetes v1.30.3
