@@ -10,26 +10,33 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	kubecontroller "k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/controller/history"
+	"k8s.io/kubernetes/pkg/util/taints"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	"github.com/SlinkyProject/slurm-operator/internal/builder/labels"
 	nodesetutils "github.com/SlinkyProject/slurm-operator/internal/controller/nodeset/utils"
 	"github.com/SlinkyProject/slurm-operator/internal/utils"
 	"github.com/SlinkyProject/slurm-operator/internal/utils/historycontrol"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/mathutils"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/objectutils"
 	"github.com/SlinkyProject/slurm-operator/internal/utils/podcontrol"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/podutils"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/structutils"
+	slurmtaints "github.com/SlinkyProject/slurm-operator/pkg/taints"
 )
 
 const (
@@ -40,11 +47,11 @@ const (
 func (r *NodeSetReconciler) Sync(ctx context.Context, req reconcile.Request) error {
 	logger := log.FromContext(ctx)
 
-	nodeset := &slinkyv1alpha1.NodeSet{}
+	nodeset := &slinkyv1beta1.NodeSet{}
 	if err := r.Get(ctx, req.NamespacedName, nodeset); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(3).Info("NodeSet has been deleted.", "request", req)
-			r.expectations.DeleteExpectations(logger, req.NamespacedName.String())
+			r.expectations.DeleteExpectations(logger, req.String())
 			return nil
 		}
 		return err
@@ -52,14 +59,7 @@ func (r *NodeSetReconciler) Sync(ctx context.Context, req reconcile.Request) err
 
 	// Make a copy now to avoid client cache mutation.
 	nodeset = nodeset.DeepCopy()
-	key := utils.KeyFunc(nodeset)
-
-	everything := metav1.LabelSelector{}
-	if apiequality.Semantic.DeepEqual(nodeset.Spec.Selector, &everything) {
-		r.eventRecorder.Eventf(nodeset, corev1.EventTypeWarning, SelectingAllReason,
-			"This NodeSet is selecting all pods. A non-empty selector is required.")
-		return nil
-	}
+	key := objectutils.KeyFunc(nodeset)
 
 	if err := r.adoptOrphanRevisions(ctx, nodeset); err != nil {
 		return err
@@ -80,7 +80,6 @@ func (r *NodeSetReconciler) Sync(ctx context.Context, req reconcile.Request) err
 	if err != nil {
 		return err
 	}
-	nodesetPods = kubecontroller.FilterActivePods(logger, nodesetPods)
 
 	if !r.expectations.SatisfiedExpectations(logger, key) || nodeset.DeletionTimestamp != nil {
 		return r.syncStatus(ctx, nodeset, nodesetPods, currentRevision, updateRevision, collisionCount, hash)
@@ -95,7 +94,7 @@ func (r *NodeSetReconciler) Sync(ctx context.Context, req reconcile.Request) err
 			return r.syncStatus(ctx, nodeset, nodesetPods, currentRevision, updateRevision, collisionCount, hash, err)
 		}
 		if err := r.truncateHistory(ctx, nodeset, revisions, currentRevision, updateRevision); err != nil {
-			err = fmt.Errorf("failed to clean up revisions of NodeSet(%s): %v", klog.KObj(nodeset), err)
+			err = fmt.Errorf("failed to clean up revisions of NodeSet(%s): %w", klog.KObj(nodeset), err)
 			return r.syncStatus(ctx, nodeset, nodesetPods, currentRevision, updateRevision, collisionCount, hash, err)
 		}
 	}
@@ -105,7 +104,7 @@ func (r *NodeSetReconciler) Sync(ctx context.Context, req reconcile.Request) err
 
 // adoptOrphanRevisions adopts any orphaned ControllerRevisions that match nodeset's Selector. If all adoptions are
 // successful the returned error is nil.
-func (r *NodeSetReconciler) adoptOrphanRevisions(ctx context.Context, nodeset *slinkyv1alpha1.NodeSet) error {
+func (r *NodeSetReconciler) adoptOrphanRevisions(ctx context.Context, nodeset *slinkyv1beta1.NodeSet) error {
 	revisions, err := r.listRevisions(nodeset)
 	if err != nil {
 		return err
@@ -129,7 +128,7 @@ func (r *NodeSetReconciler) adoptOrphanRevisions(ctx context.Context, nodeset *s
 	if len(orphanRevisions) > 0 {
 		canAdoptErr := r.canAdoptFunc(nodeset)(ctx)
 		if canAdoptErr != nil {
-			return fmt.Errorf("cannot adopt ControllerRevisions: %v", canAdoptErr)
+			return fmt.Errorf("cannot adopt ControllerRevisions: %w", canAdoptErr)
 		}
 		return r.doAdoptOrphanRevisions(nodeset, orphanRevisions)
 	}
@@ -137,11 +136,11 @@ func (r *NodeSetReconciler) adoptOrphanRevisions(ctx context.Context, nodeset *s
 }
 
 func (r *NodeSetReconciler) doAdoptOrphanRevisions(
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	revisions []*appsv1.ControllerRevision,
 ) error {
 	for i := range revisions {
-		adopted, err := r.historyControl.AdoptControllerRevision(nodeset, slinkyv1alpha1.NodeSetGVK, revisions[i])
+		adopted, err := r.historyControl.AdoptControllerRevision(nodeset, slinkyv1beta1.NodeSetGVK, revisions[i])
 		if err != nil {
 			return err
 		}
@@ -152,11 +151,9 @@ func (r *NodeSetReconciler) doAdoptOrphanRevisions(
 
 // listRevisions returns a array of the ControllerRevisions that represent the revisions of nodeset. If the returned
 // error is nil, the returns slice of ControllerRevisions is valid.
-func (r *NodeSetReconciler) listRevisions(nodeset *slinkyv1alpha1.NodeSet) ([]*appsv1.ControllerRevision, error) {
-	selector, err := metav1.LabelSelectorAsSelector(nodeset.Spec.Selector)
-	if err != nil {
-		return nil, err
-	}
+func (r *NodeSetReconciler) listRevisions(nodeset *slinkyv1beta1.NodeSet) ([]*appsv1.ControllerRevision, error) {
+	selectorLabels := labels.NewBuilder().WithWorkerSelectorLabels(nodeset).Build()
+	selector := k8slabels.SelectorFromSet(k8slabels.Set(selectorLabels))
 	return r.historyControl.ListControllerRevisions(nodeset, selector)
 }
 
@@ -166,24 +163,22 @@ func (r *NodeSetReconciler) listRevisions(nodeset *slinkyv1alpha1.NodeSet) ([]*a
 // If you want to modify one, you need to deep-copy it first.
 func (r *NodeSetReconciler) getNodeSetPods(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 ) ([]*corev1.Pod, error) {
-	selector, err := metav1.LabelSelectorAsSelector(nodeset.Spec.Selector)
-	if err != nil {
-		return nil, err
-	}
+	selectorLabels := labels.NewBuilder().WithWorkerSelectorLabels(nodeset).Build()
+	selector := k8slabels.SelectorFromSet(k8slabels.Set(selectorLabels))
 
 	// List all pods to include those that do not match the selector anymore but
 	// have a ControllerRef pointing to this controller.
 	opts := &client.ListOptions{
 		Namespace:     nodeset.GetNamespace(),
-		LabelSelector: labels.Everything(),
+		LabelSelector: k8slabels.Everything(),
 	}
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, opts); err != nil {
 		return nil, err
 	}
-	pods := utils.ReferenceList(podList.Items)
+	pods := structutils.ReferenceList(podList.Items)
 
 	filter := func(pod *corev1.Pod) bool {
 		// Only claim if it matches our NodeSet name schema. Otherwise release/ignore.
@@ -193,19 +188,19 @@ func (r *NodeSetReconciler) getNodeSetPods(
 	podControl := podcontrol.NewPodControl(r.Client, r.eventRecorder)
 
 	// Use ControllerRefManager to adopt/orphan as needed.
-	cm := kubecontroller.NewPodControllerRefManager(podControl, nodeset, selector, slinkyv1alpha1.NodeSetGVK, r.canAdoptFunc(nodeset))
+	cm := kubecontroller.NewPodControllerRefManager(podControl, nodeset, selector, slinkyv1beta1.NodeSetGVK, r.canAdoptFunc(nodeset))
 	return cm.ClaimPods(ctx, pods, filter)
 }
 
 // If any adoptions are attempted, we should first recheck for deletion with
 // an uncached quorum read sometime after listing Pods/ControllerRevisions.
-func (r *NodeSetReconciler) canAdoptFunc(nodeset *slinkyv1alpha1.NodeSet) func(ctx context.Context) error {
+func (r *NodeSetReconciler) canAdoptFunc(nodeset *slinkyv1beta1.NodeSet) func(ctx context.Context) error {
 	return kubecontroller.RecheckDeletionTimestamp(func(ctx context.Context) (metav1.Object, error) {
 		namespacedName := types.NamespacedName{
 			Namespace: nodeset.GetNamespace(),
 			Name:      nodeset.GetName(),
 		}
-		fresh := &slinkyv1alpha1.NodeSet{}
+		fresh := &slinkyv1beta1.NodeSet{}
 		if err := r.Get(ctx, namespacedName, fresh); err != nil {
 			return nil, err
 		}
@@ -217,14 +212,34 @@ func (r *NodeSetReconciler) canAdoptFunc(nodeset *slinkyv1alpha1.NodeSet) func(c
 	})
 }
 
-// sync is the main reconcilation logic.
+// sync is the main reconciliation logic.
 func (r *NodeSetReconciler) sync(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	hash string,
 ) error {
-	if err := r.syncSlurm(ctx, nodeset, pods); err != nil {
+	if err := r.slurmControl.RefreshNodeCache(ctx, nodeset); err != nil {
+		return err
+	}
+
+	if err := r.syncClusterWorkerService(ctx, nodeset); err != nil {
+		return err
+	}
+
+	if err := r.syncClusterWorkerPDB(ctx, nodeset); err != nil {
+		return err
+	}
+
+	if err := r.syncSlurmDeadline(ctx, nodeset, pods); err != nil {
+		return err
+	}
+
+	if err := r.syncCordon(ctx, nodeset, pods); err != nil {
+		return err
+	}
+
+	if err := r.syncTaint(ctx); err != nil {
 		return err
 	}
 
@@ -235,10 +250,203 @@ func (r *NodeSetReconciler) sync(
 	return nil
 }
 
-// syncSlurm will reconcile the Slurm Nodes with the NodeSet Pods.
-func (r *NodeSetReconciler) syncSlurm(
+// syncClusterWorkerService manages the cluster worker hostname service for the Slurm cluster.
+func (r *NodeSetReconciler) syncClusterWorkerService(ctx context.Context, nodeset *slinkyv1beta1.NodeSet) error {
+	service, err := r.builder.BuildClusterWorkerService(nodeset)
+	if err != nil {
+		return fmt.Errorf("failed to build cluster worker service: %w", err)
+	}
+
+	serviceKey := client.ObjectKeyFromObject(service)
+	if err := r.Get(ctx, serviceKey, service); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	clusterName := nodeset.Spec.ControllerRef.Name
+	if err := nodesetutils.SetOwnerReferences(r.Client, ctx, service, clusterName); err != nil {
+		return err
+	}
+
+	if err := objectutils.SyncObject(r.Client, ctx, service, true); err != nil {
+		return fmt.Errorf("failed to sync service (%s): %w", klog.KObj(service), err)
+	}
+
+	return nil
+}
+
+// syncCordon handles propagating cordon/uncordon activity into the NodeSet pods.
+//
+// When the Kubernetes node is cordoned, the NodeSet pods on that node should have their Slurm node drained.
+// Conversely, when the Kubernetes node is uncordoned, the NodeSet pods on that node should have their Slurm node be undrained.
+// Otherwise the pods' pod-cordon label intent is propagated -- have the Slurm node drained or undrained.
+func (r *NodeSetReconciler) syncCordon(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
+	pods []*corev1.Pod,
+) error {
+	logger := log.FromContext(ctx)
+
+	syncCordonFn := func(i int) error {
+		pod := pods[i]
+
+		node := &corev1.Node{}
+		nodeKey := types.NamespacedName{Name: pod.Spec.NodeName}
+		if err := r.Get(ctx, nodeKey, node); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		nodeIsCordoned := node.Spec.Unschedulable
+		podIsCordoned := podutils.IsPodCordon(pod)
+		slurmNodeIsUnresponsive, err := r.slurmControl.IsNodeDownForUnresponsive(ctx, nodeset, pod)
+		if err != nil {
+			return err
+		}
+		ourReason, err := r.slurmControl.IsNodeReasonOurs(ctx, nodeset, pod)
+		if err != nil {
+			return err
+		}
+
+		switch {
+		// If Slurm node was externally set into a state, preserve it
+		case !ourReason, slurmNodeIsUnresponsive:
+			return nil
+
+		// If Kubernetes node is cordoned but pod isn't, cordon the pod
+		case nodeIsCordoned:
+			logger.Info("Kubernetes node cordoned externally, cordoning pod",
+				"pod", klog.KObj(pod), "node", node.Name)
+			reason := fmt.Sprintf("Node (%s) was cordoned, Pod (%s) must be cordoned",
+				pod.Spec.NodeName, klog.KObj(pod))
+
+			// If the node being cordoned has AnnotationNodeCordonReason set, override the default reason
+			node := &corev1.Node{}
+			name := pod.Spec.NodeName
+			key := types.NamespacedName{
+				Name: name,
+			}
+			if err := r.Get(ctx, key, node); err != nil {
+				return fmt.Errorf("failed to get node: %w", err)
+			}
+			if value, ok := node.Annotations[slinkyv1beta1.AnnotationNodeCordonReason]; ok {
+				logger.V(1).Info("Slurm node drain reason overridden by Kubernetes node annotation",
+					"reason", value)
+				reason = value
+			}
+
+			if err := r.makePodCordonAndDrain(ctx, nodeset, pod, reason); err != nil {
+				return err
+			}
+
+		// If pod is cordoned, drain the Slurm node
+		case podIsCordoned:
+			reason := fmt.Sprintf("Pod (%s) was cordoned", klog.KObj(pod))
+			if err := r.slurmControl.MakeNodeDrain(ctx, nodeset, pod, reason); err != nil {
+				return err
+			}
+
+		// If pod is uncordoned, undrain the Slurm node
+		case !podIsCordoned:
+			reason := fmt.Sprintf("Pod (%s) was uncordoned", klog.KObj(pod))
+			if err := r.slurmControl.MakeNodeUndrain(ctx, nodeset, pod, reason); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+	if _, err := utils.SlowStartBatch(len(pods), utils.SlowStartInitialBatchSize, syncCordonFn); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// syncTaint ensures that a NoExecute taint is applied to all nodes running NodeSets
+func (r *NodeSetReconciler) syncTaint(
+	ctx context.Context,
+) error {
+	// Build a list of Kube nodes
+	kubeNodeList := &corev1.NodeList{}
+	if err := r.List(ctx, kubeNodeList); err != nil {
+		return err
+	}
+
+	// Build a list NodeSets and NodeSet UIDs
+	nodesetList := &slinkyv1beta1.NodeSetList{}
+	if err := r.List(ctx, nodesetList); err != nil {
+		return err
+	}
+	nodesetUIDs := sets.New[types.UID]()
+	for _, nodeset := range nodesetList.Items {
+		if nodeset.Spec.TaintKubeNodes {
+			nodesetUIDs.Insert(nodeset.UID)
+		}
+	}
+
+	// Build a list of Pods
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList); err != nil {
+		return err
+	}
+
+	// Build a set of Kube Nodes that have NodeSet pods that are not terminating
+	// Use GetControllerOf on the pod
+	nodeSetWithPod := sets.New[string]()
+	for _, pod := range podList.Items {
+		owner := metav1.GetControllerOf(&pod)
+		if owner == nil || !nodesetUIDs.Has(owner.UID) || !podutils.IsRunning(&pod) || podutils.IsTerminating(&pod) {
+			continue
+		}
+		nodeSetWithPod.Insert(pod.Spec.NodeName)
+	}
+
+	syncTaintFn := func(i int) error {
+		node := kubeNodeList.Items[i]
+		var toUpdate *corev1.Node
+		var updated bool
+		var err error
+
+		// Taint the node if it has a NodeSet pod that is not terminating
+		if nodeSetWithPod.Has(node.Name) {
+			toUpdate, updated, err = taints.AddOrUpdateTaint(&node, &slurmtaints.TaintNodeWorker)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Remove the taint from nodes that don't have NodeSet pods
+			toUpdate, updated, err = taints.RemoveTaint(&node, &slurmtaints.TaintNodeWorker)
+			if err != nil {
+				return err
+			}
+		}
+
+		if !updated {
+			return nil
+		}
+
+		patch := client.StrategicMergeFrom(&node)
+		if err := r.Patch(ctx, toUpdate, patch); err != nil {
+			return err
+		}
+
+		return nil
+	}
+	if _, err := utils.SlowStartBatch(len(kubeNodeList.Items), utils.SlowStartInitialBatchSize, syncTaintFn); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// syncSlurmDeadline handles the Slurm Node's workload completion deadline.
+func (r *NodeSetReconciler) syncSlurmDeadline(
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 ) error {
 	nodeDeadlines, err := r.slurmControl.GetNodeDeadlines(ctx, nodeset, pods)
@@ -246,35 +454,24 @@ func (r *NodeSetReconciler) syncSlurm(
 		return err
 	}
 
-	syncSlurmFn := func(i int) error {
+	syncSlurmDeadlineFn := func(i int) error {
 		pod := pods[i]
 		slurmNodeName := nodesetutils.GetNodeName(pod)
 		deadline := nodeDeadlines.Peek(slurmNodeName)
 
 		toUpdate := pod.DeepCopy()
 		if deadline.IsZero() {
-			delete(toUpdate.Annotations, slinkyv1alpha1.AnnotationPodDeadline)
+			delete(toUpdate.Annotations, slinkyv1beta1.AnnotationPodDeadline)
 		} else {
-			toUpdate.Annotations[slinkyv1alpha1.AnnotationPodDeadline] = deadline.Format(time.RFC3339)
+			toUpdate.Annotations[slinkyv1beta1.AnnotationPodDeadline] = deadline.Format(time.RFC3339)
 		}
 		if err := r.Patch(ctx, toUpdate, client.StrategicMergeFrom(pod)); err != nil {
 			return err
 		}
 
-		if utils.IsPodCordon(pod) {
-			reason := fmt.Sprintf("Pod (%s) is cordoned", klog.KObj(pod))
-			if err := r.slurmControl.MakeNodeDrain(ctx, nodeset, pod, reason); err != nil {
-				return err
-			}
-		} else {
-			reason := fmt.Sprintf("Pod (%s) is uncordoned", klog.KObj(pod))
-			if err := r.slurmControl.MakeNodeUndrain(ctx, nodeset, pod, reason); err != nil {
-				return err
-			}
-		}
 		return nil
 	}
-	if _, err := utils.SlowStartBatch(len(pods), utils.SlowStartInitialBatchSize, syncSlurmFn); err != nil {
+	if _, err := utils.SlowStartBatch(len(pods), utils.SlowStartInitialBatchSize, syncSlurmDeadlineFn); err != nil {
 		return err
 	}
 
@@ -288,7 +485,7 @@ func (r *NodeSetReconciler) syncSlurm(
 //   - Processed when: `replicaCount == replicasWant“
 func (r *NodeSetReconciler) syncNodeSet(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	hash string,
 ) error {
@@ -300,42 +497,41 @@ func (r *NodeSetReconciler) syncNodeSet(
 	diff := len(pods) - replicaCount
 	if diff < 0 {
 		diff = -diff
-		logger.V(2).Info("Too few NodeSet pods", "nodeset", klog.KObj(nodeset),
-			"need", replicaCount, "creating", diff)
+		logger.V(2).Info("Too few NodeSet pods", "need", replicaCount, "creating", diff)
 		return r.doPodScaleOut(ctx, nodeset, pods, diff, hash)
-	} else if diff > 0 {
-		logger.V(2).Info("Too many NodeSet pods", "nodeset", klog.KObj(nodeset),
-			"need", replicaCount, "deleting", diff)
+	}
+
+	if diff > 0 {
+		logger.V(2).Info("Too many NodeSet pods", "need", replicaCount, "deleting", diff)
 		podsToDelete, podsToKeep := nodesetutils.SplitActivePods(pods, diff)
 		return r.doPodScaleIn(ctx, nodeset, podsToDelete, podsToKeep)
-	} else {
-		logger.V(2).Info("Processing NodeSet pods", "nodeset", klog.KObj(nodeset),
-			"replicas", replicaCount)
-		return r.doPodProcessing(ctx, nodeset, pods, hash)
 	}
+
+	logger.V(2).Info("Processing NodeSet pods", "replicas", replicaCount)
+	return r.doPodProcessing(ctx, nodeset, pods, hash)
 }
 
 // doPodScaleOut handles scaling-out NodeSet pods.
 // NodeSet pods should be uncordoned and undrained, and new pods created.
 func (r *NodeSetReconciler) doPodScaleOut(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	numCreate int,
 	hash string,
 ) error {
 	logger := log.FromContext(ctx)
-	key := utils.KeyFunc(nodeset)
+	key := objectutils.KeyFunc(nodeset)
 
 	uncordonFn := func(i int) error {
 		pod := pods[i]
-		return r.makePodUncordonAndUndrain(ctx, nodeset, pod)
+		return r.syncPodUncordon(ctx, nodeset, pod)
 	}
 	if _, err := utils.SlowStartBatch(len(pods), utils.SlowStartInitialBatchSize, uncordonFn); err != nil {
 		return err
 	}
 
-	numCreate = utils.Clamp(numCreate, 0, burstReplicas)
+	numCreate = mathutils.Clamp(numCreate, 0, burstReplicas)
 
 	usedOrdinals := set.New[int]()
 	for _, pod := range pods {
@@ -348,7 +544,10 @@ func (r *NodeSetReconciler) doPodScaleOut(
 		for usedOrdinals.Has(ordinal) {
 			ordinal++
 		}
-		pod := nodesetutils.NewNodeSetPod(nodeset, ordinal, hash)
+		pod, err := r.newNodeSetPod(ctx, nodeset, ordinal, hash)
+		if err != nil {
+			return err
+		}
 		usedOrdinals.Insert(ordinal)
 		podsToCreate[i] = pod
 	}
@@ -388,8 +587,8 @@ func (r *NodeSetReconciler) doPodScaleOut(
 	// retry the slow start process.
 	if skippedPods := numCreate - successfulCreations; skippedPods > 0 {
 		logger.V(2).Info("Slow-start failure. Skipping creation of pods, decrementing expectations",
-			"podsSkipped", skippedPods, "kind", slinkyv1alpha1.NodeSetGVK, "nodeset", klog.KObj(nodeset))
-		for i := 0; i < skippedPods; i++ {
+			"podsSkipped", skippedPods, "kind", slinkyv1beta1.NodeSetGVK)
+		for range skippedPods {
 			// Decrement the expected number of creates because the informer won't observe this pod
 			r.expectations.CreationObserved(logger, key)
 		}
@@ -398,20 +597,37 @@ func (r *NodeSetReconciler) doPodScaleOut(
 	return err
 }
 
+func (r *NodeSetReconciler) newNodeSetPod(
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
+	ordinal int,
+	revisionHash string,
+) (*corev1.Pod, error) {
+	controller := &slinkyv1beta1.Controller{}
+	key := nodeset.Spec.ControllerRef.NamespacedName()
+	if err := r.Get(ctx, key, controller); err != nil {
+		return nil, err
+	}
+
+	pod := nodesetutils.NewNodeSetPod(nodeset, controller, ordinal, revisionHash)
+
+	return pod, nil
+}
+
 // doPodScaleIn handles scaling-in NodeSet pods.
 // Ceratain NodeSet pods should be cordoned and drained, and defunct pods
 // deleted after being fulled drained.
 func (r *NodeSetReconciler) doPodScaleIn(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	podsToDelete, podsToKeep []*corev1.Pod,
 ) error {
 	logger := log.FromContext(ctx)
-	key := utils.KeyFunc(nodeset)
+	key := objectutils.KeyFunc(nodeset)
 
 	uncordonFn := func(i int) error {
 		pod := podsToKeep[i]
-		return r.makePodUncordonAndUndrain(ctx, nodeset, pod)
+		return r.syncPodUncordon(ctx, nodeset, pod)
 	}
 	if _, err := utils.SlowStartBatch(len(podsToKeep), utils.SlowStartInitialBatchSize, uncordonFn); err != nil {
 		return err
@@ -432,7 +648,7 @@ func (r *NodeSetReconciler) doPodScaleIn(
 		return err
 	}
 
-	numDelete := utils.Clamp(len(podsToDelete), 0, burstReplicas)
+	numDelete := mathutils.Clamp(len(podsToDelete), 0, burstReplicas)
 
 	// Snapshot the UIDs (namespace/name) of the pods we're expecting to see
 	// deleted, so we know to record their expectations exactly once either
@@ -451,7 +667,7 @@ func (r *NodeSetReconciler) doPodScaleIn(
 			r.expectations.DeletionObserved(logger, key, podKey)
 			if !apierrors.IsNotFound(err) {
 				logger.V(2).Info("Failed to delete pod, decremented expectations",
-					"pod", podKey, "kind", slinkyv1alpha1.NodeSetGVK, "nodeset", klog.KObj(nodeset))
+					"pod", podKey, "kind", slinkyv1beta1.NodeSetGVK)
 				return err
 			}
 		}
@@ -481,17 +697,22 @@ func getPodKeys(pods []*corev1.Pod) []string {
 // NOTE: intended to be used by utils.SlowStartBatch().
 func (r *NodeSetReconciler) processCondemned(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	condemned []*corev1.Pod,
 	i int,
 ) error {
 	logger := klog.FromContext(ctx)
 	pod := condemned[i]
-	key := utils.KeyFunc(pod)
+	key := objectutils.KeyFunc(pod)
 
-	if utils.IsTerminating(pod) {
+	podKey := client.ObjectKeyFromObject(pod)
+	if err := r.Get(ctx, podKey, pod); err != nil {
+		return err
+	}
+
+	if podutils.IsTerminating(pod) {
 		logger.V(3).Info("NodeSet Pod is terminating, skipping further processing",
-			"nodeSet", klog.KObj(nodeset), "pod", klog.KObj(pod))
+			"pod", klog.KObj(pod))
 		return nil
 	}
 
@@ -499,17 +720,19 @@ func (r *NodeSetReconciler) processCondemned(
 	if err != nil {
 		return err
 	}
-	if utils.IsRunningAndReady(pod) && !isDrained {
+
+	if podutils.IsRunning(pod) && !isDrained {
 		logger.V(2).Info("NodeSet Pod is draining, pending termination for scale-in",
-			"nodeSet", klog.KObj(nodeset), "pod", klog.KObj(pod))
+			"pod", klog.KObj(pod))
 		// Decrement expectations and requeue reconcile because the Slurm node is not drained yet.
 		// We must wait until fully drained to terminate the pod.
 		durationStore.Push(key, 30*time.Second)
-		return r.makePodCordonAndDrain(ctx, nodeset, pod)
+		reason := fmt.Sprintf("Pod (%s) was cordoned pending termination", klog.KObj(pod))
+		return r.makePodCordonAndDrain(ctx, nodeset, pod, reason)
 	}
 
 	logger.V(2).Info("NodeSet Pod is terminating for scale-in",
-		"nodeSet", klog.KObj(nodeset), "pod", klog.KObj(pod))
+		"pod", klog.KObj(pod))
 	if err := r.podControl.DeleteNodeSetPod(ctx, nodeset, pod); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return err
@@ -521,19 +744,19 @@ func (r *NodeSetReconciler) processCondemned(
 // doPodProcessing handles batch processing of NodeSet pods.
 func (r *NodeSetReconciler) doPodProcessing(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	hash string,
 ) error {
 	logger := log.FromContext(ctx)
-	key := utils.KeyFunc(nodeset)
+	key := objectutils.KeyFunc(nodeset)
 
-	// NOTE: we must repect the uncordon and undrain nodes in accordance with updateStrategy
+	// NOTE: we must respect the uncordon and undrain nodes in accordance with updateStrategy
 	// to not fight it given the statefulness of how we cordon and terminate nodeset pods.
-	_, podsToKeep := r.splitUpdatePods(nodeset, pods, hash)
+	_, podsToKeep := r.splitUpdatePods(ctx, nodeset, pods, hash)
 	uncordonFn := func(i int) error {
 		pod := podsToKeep[i]
-		return r.makePodUncordonAndUndrain(ctx, nodeset, pod)
+		return r.syncPodUncordon(ctx, nodeset, pod)
 	}
 	if _, err := utils.SlowStartBatch(len(podsToKeep), utils.SlowStartInitialBatchSize, uncordonFn); err != nil {
 		return err
@@ -558,7 +781,7 @@ func (r *NodeSetReconciler) doPodProcessing(
 // NOTE: intended to be used by utils.SlowStartBatch().
 func (r *NodeSetReconciler) processReplica(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pod *corev1.Pod,
 ) error {
 	// Note that pods with phase Succeeded will also trigger this event. This is
@@ -566,8 +789,8 @@ func (r *NodeSetReconciler) processReplica(
 	// (e.g. terminated on node reboot) is determined by the exit code of the
 	// container, not by the reason for pod termination. We should restart the
 	// pod regardless of the exit code.
-	if utils.IsFailed(pod) || utils.IsSucceeded(pod) {
-		if !utils.IsTerminating(pod) {
+	if podutils.IsFailed(pod) || podutils.IsSucceeded(pod) {
+		if !podutils.IsTerminating(pod) {
 			if err := r.podControl.DeleteNodeSetPod(ctx, nodeset, pod); err != nil {
 				return err
 			}
@@ -582,14 +805,45 @@ func (r *NodeSetReconciler) processReplica(
 // makePodCordonAndDrain will cordon the pod and drain the corresponding Slurm node.
 func (r *NodeSetReconciler) makePodCordonAndDrain(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pod *corev1.Pod,
+	reason string,
 ) error {
 	if err := r.makePodCordon(ctx, pod); err != nil {
 		return err
 	}
 
+	if err := r.syncSlurmNodeDrain(ctx, nodeset, pod, reason); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// syncSlurmNodeDrain will drain the corresponding Slurm node.
+func (r *NodeSetReconciler) syncSlurmNodeDrain(
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
+	pod *corev1.Pod,
+	message string,
+) error {
+	logger := log.FromContext(ctx)
+
+	isDrain, err := r.slurmControl.IsNodeDrain(ctx, nodeset, pod)
+	if err != nil {
+		return err
+	}
+
+	if isDrain {
+		logger.V(1).Info("Node is drain, skipping drain request")
+		return nil
+	}
+
 	reason := fmt.Sprintf("Pod (%s) has been cordoned", klog.KObj(pod))
+	if message != "" {
+		reason = message
+	}
+
 	if err := r.slurmControl.MakeNodeDrain(ctx, nodeset, pod, reason); err != nil {
 		return err
 	}
@@ -604,7 +858,7 @@ func (r *NodeSetReconciler) makePodCordon(
 ) error {
 	logger := log.FromContext(ctx)
 
-	if utils.IsPodCordon(pod) {
+	if podutils.IsPodCordon(pod) {
 		return nil
 	}
 
@@ -613,8 +867,11 @@ func (r *NodeSetReconciler) makePodCordon(
 	if toUpdate.Annotations == nil {
 		toUpdate.Annotations = make(map[string]string)
 	}
-	toUpdate.Annotations[slinkyv1alpha1.AnnotationPodCordon] = "true"
+	toUpdate.Annotations[slinkyv1beta1.AnnotationPodCordon] = "true"
 	if err := r.Patch(ctx, toUpdate, client.StrategicMergeFrom(pod)); err != nil {
+		return err
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
 		return err
 	}
 
@@ -624,14 +881,45 @@ func (r *NodeSetReconciler) makePodCordon(
 // makePodUncordonAndUndrain will uncordon the pod and undrain the corresponding Slurm node.
 func (r *NodeSetReconciler) makePodUncordonAndUndrain(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pod *corev1.Pod,
+	reason string,
 ) error {
 	if err := r.makePodUncordon(ctx, pod); err != nil {
 		return err
 	}
 
+	if err := r.syncSlurmNodeUndrain(ctx, nodeset, pod, reason); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// syncSlurmNodeUndrain will undrain the corresponding Slurm node.
+func (r *NodeSetReconciler) syncSlurmNodeUndrain(
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
+	pod *corev1.Pod,
+	message string,
+) error {
+	logger := log.FromContext(ctx)
+
+	isDrain, err := r.slurmControl.IsNodeDrain(ctx, nodeset, pod)
+	if err != nil {
+		return err
+	}
+
+	if !isDrain {
+		logger.V(1).Info("Node is undrain, skipping undrain request")
+		return nil
+	}
+
 	reason := fmt.Sprintf("Pod (%s) has been uncordoned", klog.KObj(pod))
+	if message != "" {
+		reason = message
+	}
+
 	if err := r.slurmControl.MakeNodeUndrain(ctx, nodeset, pod, reason); err != nil {
 		return err
 	}
@@ -643,32 +931,69 @@ func (r *NodeSetReconciler) makePodUncordonAndUndrain(
 func (r *NodeSetReconciler) makePodUncordon(ctx context.Context, pod *corev1.Pod) error {
 	logger := log.FromContext(ctx)
 
-	if !utils.IsPodCordon(pod) {
+	if !podutils.IsPodCordon(pod) {
 		return nil
 	}
 
 	toUpdate := pod.DeepCopy()
 	logger.Info("Uncordon Pod", "Pod", klog.KObj(toUpdate))
-	delete(toUpdate.Annotations, slinkyv1alpha1.AnnotationPodCordon)
+	delete(toUpdate.Annotations, slinkyv1beta1.AnnotationPodCordon)
 	if err := r.Patch(ctx, toUpdate, client.StrategicMergeFrom(pod)); err != nil {
+		return err
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
 		return err
 	}
 
 	return nil
 }
 
+// syncPodUncordon handles uncordoning with Kubernetes and Slurm node state synchronization
+func (r *NodeSetReconciler) syncPodUncordon(ctx context.Context, nodeset *slinkyv1beta1.NodeSet, pod *corev1.Pod) error {
+	logger := log.FromContext(ctx)
+
+	// The Kubernetes nodes which the pod is on may have been cordoned
+	if r.isNodeCordoned(ctx, pod) {
+		logger.V(1).Info("Skipping uncordon for pod on externally cordoned node",
+			"pod", klog.KObj(pod), "node", pod.Spec.NodeName)
+		return nil // Skip
+	}
+
+	// Slurm node may have been externally set in down, drain, fail, etc...
+	if ok, err := r.slurmControl.IsNodeReasonOurs(ctx, nodeset, pod); err != nil {
+		return err
+	} else if !ok {
+		logger.V(1).Info("Skipping uncordon for pod which has an externally set reason",
+			"pod", klog.KObj(pod))
+		return nil // Skip
+	}
+
+	return r.makePodUncordonAndUndrain(ctx, nodeset, pod, "")
+}
+
+// isNodeCordoned returns true if the pod's node is cordoned
+func (r *NodeSetReconciler) isNodeCordoned(ctx context.Context, pod *corev1.Pod) bool {
+	node := &corev1.Node{}
+	nodeKey := types.NamespacedName{Name: pod.Spec.NodeName}
+	if err := r.Get(ctx, nodeKey, node); err != nil {
+		return false
+	}
+
+	return node.Spec.Unschedulable
+}
+
 // syncUpdate will synchronize NodeSet pod version updates based on update type.
 func (r *NodeSetReconciler) syncUpdate(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	hash string,
 ) error {
 	switch nodeset.Spec.UpdateStrategy.Type {
-	case slinkyv1alpha1.OnDeleteNodeSetStrategyType:
+	case slinkyv1beta1.OnDeleteNodeSetStrategyType:
 		// r.syncNodeSet() will handled it on the next reconcile
 		return nil
-	case slinkyv1alpha1.RollingUpdateNodeSetStrategyType:
+	case slinkyv1beta1.RollingUpdateNodeSetStrategyType:
 		return r.syncRollingUpdate(ctx, nodeset, pods, hash)
 	default:
 		return nil
@@ -678,16 +1003,27 @@ func (r *NodeSetReconciler) syncUpdate(
 // syncRollingUpdate will synchronize rolling updates for NodeSet pods.
 func (r *NodeSetReconciler) syncRollingUpdate(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	hash string,
 ) error {
 	logger := log.FromContext(ctx)
 
-	podsToDelete, _ := r.splitUpdatePods(nodeset, pods, hash)
+	_, oldPods := findUpdatedPods(pods, hash)
+
+	unhealthyPods, healthyPods := nodesetutils.SplitUnhealthyPods(oldPods)
+	if len(unhealthyPods) > 0 {
+		logger.Info("Delete unhealthy pods for Rolling Update",
+			"unhealthyPods", len(unhealthyPods))
+		if err := r.doPodScaleIn(ctx, nodeset, unhealthyPods, nil); err != nil {
+			return err
+		}
+	}
+
+	podsToDelete, _ := r.splitUpdatePods(ctx, nodeset, healthyPods, hash)
 	if len(podsToDelete) > 0 {
 		logger.Info("Scale-in pods for Rolling Update",
-			"nodeset", klog.KObj(nodeset), "delete", len(podsToDelete))
+			"delete", len(podsToDelete))
 		if err := r.doPodScaleIn(ctx, nodeset, podsToDelete, nil); err != nil {
 			return err
 		}
@@ -698,32 +1034,40 @@ func (r *NodeSetReconciler) syncRollingUpdate(
 
 // splitUpdatePods returns two pod lists based on UpdateStrategy type.
 func (r *NodeSetReconciler) splitUpdatePods(
-	nodeset *slinkyv1alpha1.NodeSet,
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
 	pods []*corev1.Pod,
 	hash string,
 ) (podsToDelete, podsToKeep []*corev1.Pod) {
+	logger := log.FromContext(ctx)
+
 	switch nodeset.Spec.UpdateStrategy.Type {
-	case slinkyv1alpha1.OnDeleteNodeSetStrategyType:
+	case slinkyv1beta1.OnDeleteNodeSetStrategyType:
 		return nil, nil
-	case slinkyv1alpha1.RollingUpdateNodeSetStrategyType:
+	case slinkyv1beta1.RollingUpdateNodeSetStrategyType:
+		newPods, oldPods := findUpdatedPods(pods, hash)
+
 		var numUnavailable int
 		now := metav1.Now()
-		for _, pod := range pods {
+		for _, pod := range newPods {
 			if !podutil.IsPodAvailable(pod, nodeset.Spec.MinReadySeconds, now) {
 				numUnavailable++
 			}
 		}
 
 		total := int(ptr.Deref(nodeset.Spec.Replicas, 0))
-		maxUnavailable := utils.GetScaledValueFromIntOrPercent(nodeset.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable, total, true, 1)
-		remainingUnavailable := utils.Clamp((maxUnavailable - numUnavailable), 0, maxUnavailable)
-		newPods, oldPods := findUpdatedPods(pods, hash)
+		maxUnavailable := mathutils.GetScaledValueFromIntOrPercent(nodeset.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable, total, true, 1)
+		remainingUnavailable := mathutils.Clamp((maxUnavailable - numUnavailable), 0, maxUnavailable)
 		podsToDelete, remainingOldPods := nodesetutils.SplitActivePods(oldPods, remainingUnavailable)
 
 		remainingPods := make([]*corev1.Pod, len(newPods))
 		copy(remainingPods, newPods)
 		remainingPods = append(remainingPods, remainingOldPods...)
 
+		logger.V(1).Info("calculated pod lists for update",
+			"maxUnavailable", maxUnavailable,
+			"updatePods", len(podsToDelete),
+			"remainingPods", len(remainingPods))
 		return podsToDelete, remainingPods
 	default:
 		return nil, nil
@@ -733,7 +1077,7 @@ func (r *NodeSetReconciler) splitUpdatePods(
 // findUpdatedPods looks at non-deleted pods and returns two lists, new and old pods, given the hash.
 func findUpdatedPods(pods []*corev1.Pod, hash string) (newPods, oldPods []*corev1.Pod) {
 	for _, pod := range pods {
-		if utils.IsTerminating(pod) {
+		if podutils.IsTerminating(pod) {
 			continue
 		}
 		if historycontrol.GetRevision(pod.GetLabels()) == hash {
@@ -743,4 +1087,35 @@ func findUpdatedPods(pods []*corev1.Pod, hash string) (newPods, oldPods []*corev
 		}
 	}
 	return newPods, oldPods
+}
+
+// syncClusterWorkerPDB will reconcile the cluster's PodDisruptionBudget
+func (r *NodeSetReconciler) syncClusterWorkerPDB(
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
+) error {
+
+	podDisruptionBudget, err := r.builder.BuildClusterWorkerPodDisruptionBudget(nodeset)
+	if err != nil {
+		return fmt.Errorf("failed to build cluster worker PDB: %w", err)
+	}
+
+	pdbKey := client.ObjectKeyFromObject(podDisruptionBudget)
+	if err := r.Get(ctx, pdbKey, podDisruptionBudget); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	clusterName := nodeset.Spec.ControllerRef.Name
+	if err := nodesetutils.SetOwnerReferences(r.Client, ctx, podDisruptionBudget, clusterName); err != nil {
+		return err
+	}
+
+	// Sync the PodDisruptionBudget for each cluster
+	if err := objectutils.SyncObject(r.Client, ctx, podDisruptionBudget, true); err != nil {
+		return fmt.Errorf("failed to sync object (%s): %w", klog.KObj(podDisruptionBudget), err)
+	}
+
+	return nil
 }

@@ -13,6 +13,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -22,11 +23,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/controller/cluster"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	"github.com/SlinkyProject/slurm-operator/internal/clientmap"
+	"github.com/SlinkyProject/slurm-operator/internal/controller/accounting"
+	"github.com/SlinkyProject/slurm-operator/internal/controller/controller"
+	"github.com/SlinkyProject/slurm-operator/internal/controller/loginset"
 	"github.com/SlinkyProject/slurm-operator/internal/controller/nodeset"
-	"github.com/SlinkyProject/slurm-operator/internal/resources"
-	//+kubebuilder:scaffold:imports
+	"github.com/SlinkyProject/slurm-operator/internal/controller/restapi"
+	"github.com/SlinkyProject/slurm-operator/internal/controller/slurmclient"
+	"github.com/SlinkyProject/slurm-operator/internal/controller/token"
+	// +kubebuilder:scaffold:imports
 )
 
 var (
@@ -36,8 +42,9 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 
-	utilruntime.Must(slinkyv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(slinkyv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -45,6 +52,7 @@ func init() {
 type Flags struct {
 	enableLeaderElection bool
 	probeAddr            string
+	metricsAddr          string
 	secureMetrics        bool
 	enableHTTP2          bool
 }
@@ -52,9 +60,15 @@ type Flags struct {
 func parseFlags(flags *Flags) {
 	flag.StringVar(
 		&flags.probeAddr,
-		"health-probe-bind-address",
+		"health-addr",
 		":8081",
 		"The address the probe endpoint binds to.",
+	)
+	flag.StringVar(
+		&flags.metricsAddr,
+		"metrics-addr",
+		":8080",
+		"The address the metrics server binds to.",
 	)
 	flag.BoolVar(
 		&flags.enableLeaderElection,
@@ -72,9 +86,7 @@ func parseFlags(flags *Flags) {
 
 func main() {
 	var flags Flags
-	opts := zap.Options{
-		Development: true,
-	}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	parseFlags(&flags)
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -98,7 +110,8 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: server.Options{
-			TLSOpts: tlsOpts,
+			TLSOpts:     tlsOpts,
+			BindAddress: flags.metricsAddr,
 		},
 		HealthProbeBindAddress:        flags.probeAddr,
 		LeaderElection:                flags.enableLeaderElection,
@@ -110,26 +123,37 @@ func main() {
 		os.Exit(1)
 	}
 
-	slurmClusters := resources.NewClusters()
+	clientMap := clientmap.NewClientMap()
 	eventCh := make(chan event.GenericEvent, 100)
-	if err = (&cluster.ClusterReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		SlurmClusters: slurmClusters,
-		EventCh:       eventCh,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
+	if err := controller.NewReconciler(mgr.GetClient(), clientMap).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Controller")
 		os.Exit(1)
 	}
-	if err = (&nodeset.NodeSetReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		SlurmClusters: slurmClusters,
-		EventCh:       eventCh,
-	}).SetupWithManager(mgr); err != nil {
+	if err := restapi.NewReconciler(mgr.GetClient()).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Restapi")
+		os.Exit(1)
+	}
+	if err := accounting.NewReconciler(mgr.GetClient()).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Accounting")
+		os.Exit(1)
+	}
+	if err := nodeset.NewReconciler(mgr.GetClient(), clientMap, eventCh).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeSet")
 		os.Exit(1)
 	}
+	if err := loginset.NewReconciler(mgr.GetClient()).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "LoginSet")
+		os.Exit(1)
+	}
+	if err := slurmclient.NewReconciler(mgr.GetClient(), clientMap, eventCh).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SlurmClient")
+		os.Exit(1)
+	}
+	if err := token.NewReconciler(mgr.GetClient()).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Token")
+		os.Exit(1)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -138,7 +162,7 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
+	// +kubebuilder:scaffold:builder
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running controller")

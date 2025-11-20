@@ -7,12 +7,70 @@
 set -euo pipefail
 
 ROOT_DIR="$(readlink -f "$(dirname "$0")/..")"
+DIR="$(readlink -f "$(dirname "$0")/")"
 
 function kind::prerequisites() {
 	go install sigs.k8s.io/kind@latest
+	go install sigs.k8s.io/cloud-provider-kind@latest
+}
+
+function sys::check() {
+	local fail=false
+	if ! command -v docker >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
+		echo "'docker' or 'podman' is required:"
+		echo "docker: https://www.docker.com/"
+		echo "podman: https://podman.io/"
+		fail=true
+	fi
+	if ! command -v go >/dev/null 2>&1; then
+		echo "'go' is required: https://go.dev/"
+		fail=true
+	fi
+	if ! command -v helm >/dev/null 2>&1; then
+		echo "'helm' is required: https://helm.sh/"
+		fail=true
+	fi
+	if ! command -v skaffold >/dev/null 2>&1; then
+		echo "'skaffold' is required: https://skaffold.dev/"
+		fail=true
+	fi
+	if ! command -v yq >/dev/null 2>&1; then
+		echo "'yq' is required: https://github.com/mikefarah/yq"
+		fail=true
+	fi
+	if ! command -v kubectl >/dev/null 2>&1; then
+		echo "'kubectl' is recommended: https://kubernetes.io/docs/reference/kubectl/"
+	fi
+	if [[ $OSTYPE == 'linux'* ]]; then
+		if [ "$(sysctl -n kernel.keys.maxkeys)" -lt 2000 ]; then
+			echo "Recommended to increase 'kernel.keys.maxkeys':"
+			echo "  $ sudo sysctl -w kernel.keys.maxkeys=2000"
+			echo "  $ echo 'kernel.keys.maxkeys=2000' | sudo tee --append /etc/sysctl.d/kernel.conf"
+		fi
+		if [ "$(sysctl -n fs.file-max)" -lt 10000000 ]; then
+			echo "Recommended to increase 'fs.file-max':"
+			echo "  $ sudo sysctl -w fs.file-max=10000000"
+			echo "  $ echo 'fs.file-max=10000000' | sudo tee --append /etc/sysctl.d/fs.conf"
+		fi
+		if [ "$(sysctl -n fs.inotify.max_user_instances)" -lt 65535 ]; then
+			echo "Recommended to increase 'fs.inotify.max_user_instances':"
+			echo "  $ sudo sysctl -w fs.inotify.max_user_instances=65535"
+			echo "  $ echo 'fs.inotify.max_user_instances=65535' | sudo tee --append /etc/sysctl.d/fs.conf"
+		fi
+		if [ "$(sysctl -n fs.inotify.max_user_watches)" -lt 1048576 ]; then
+			echo "Recommended to increase 'fs.inotify.max_user_watches':"
+			echo "  $ sudo sysctl -w fs.inotify.max_user_watches=1048576"
+			echo "  $ echo 'fs.inotify.max_user_watches=1048576' | sudo tee --append /etc/sysctl.d/fs.conf"
+		fi
+	fi
+
+	if $fail; then
+		exit 1
+	fi
 }
 
 function kind::start() {
+	sys::check
 	kind::prerequisites
 	local cluster_name="${1:-"kind"}"
 	local kind_config="${2:-"$ROOT_DIR/hack/kind-config.yaml"}"
@@ -27,142 +85,123 @@ function kind::start() {
 	kubectl cluster-info --context kind-"$cluster_name"
 }
 
+function helm::find() {
+	local item="$1"
+	if [ -z "$item" ]; then
+		return 0
+	elif [ "$(helm list --all-namespaces --short --filter="^${item}$" | wc -l)" -eq 0 ]; then
+		return 1
+	fi
+	return 0
+}
+
 function kind::delete() {
 	kind delete cluster --name "$cluster_name"
 }
 
-function helm::install() {
-	slurm-operator::prerequisites
-	slurm::prerequisites
-
-	cd "$ROOT_DIR"
-	make install
-}
-
-function helm::uninstall() {
-	local namespace=(
-		"slurm"
-		"slinky"
-		"keda"
-		"metrics-server"
-		"prometheus"
-		"cert-manager"
+function slurm-operator-crds::install() {
+	(
+		cd "$ROOT_DIR"/helm/slurm-operator-crds
+		skaffold run
 	)
-	for name in "${namespace[@]}"; do
-		if [ "$(helm --namespace="$name" list --all --short | wc -l)" -gt 0 ]; then
-			helm uninstall --namespace="$name" "$(helm --namespace="$name" ls --all --short)"
-		fi
-	done
-
-	cd "$ROOT_DIR"
-	make uninstall
 }
 
-function slurm::prerequisites() {
-	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-	helm repo add kedacore https://kedacore.github.io/charts
-	helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
-	helm repo add bitnami https://charts.bitnami.com/bitnami
+function slurm-operator::prerequisites() {
+	local chartName
+
+	helm repo add jetstack https://charts.jetstack.io
 	helm repo update
 
-	local prometheus="prometheus"
-	if [ "$(helm list --all-namespaces --short --filter="$prometheus" | wc -l)" -eq 0 ]; then
-		helm install "$prometheus" prometheus-community/kube-prometheus-stack \
-			--namespace "$prometheus" --create-namespace --set installCRDs=true \
-			--set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false
-
-	fi
-	local keda="keda"
-	if [ "$(helm list --all-namespaces --short --filter="$keda" | wc -l)" -eq 0 ]; then
-		helm install "$keda" kedacore/keda \
-			--namespace "$keda" --create-namespace
-	fi
-	local metrics="metrics-server"
-	if [ "$(helm list --all-namespaces --short --filter="$metrics" | wc -l)" -eq 0 ]; then
-		helm install "$metrics" metrics-server/metrics-server \
-			--set args="{--kubelet-insecure-tls}" \
-			--namespace "$metrics" --create-namespace
+	chartName=cert-manager
+	if ! helm::find "$chartName"; then
+		helm install "$chartName" jetstack/cert-manager \
+			--namespace cert-manager --create-namespace \
+			--set 'crds.enabled=true'
 	fi
 }
 
-function slurm::helm() {
-	slurm::prerequisites
-
-	local slurm_values_yaml="$ROOT_DIR/helm/slurm/values-dev.yaml"
-	if [ ! -f "$slurm_values_yaml" ]; then
-		echo "ERROR: Missing values file: $slurm_values_yaml"
-		exit 1
-	fi
-	local helm_release="slurm"
-	if [ "$(helm list --all-namespaces --short --filter="$helm_release" | wc -l)" -eq 0 ]; then
-		helm install "$helm_release" "$ROOT_DIR"/helm/slurm/ -f "$slurm_values_yaml"
-	else
-		echo "WARNING: helm release '$helm_release' exists. Skipping."
-	fi
+function slurm-operator::install() {
+	slurm-operator::prerequisites
+	(
+		cd "$ROOT_DIR"/helm/slurm-operator
+		skaffold run -p dev
+	)
 }
 
-function slurm::skaffold() {
-	slurm::prerequisites
+function slurm::install() {
 	(
 		cd "$ROOT_DIR"/helm/slurm
 		skaffold run
 	)
 }
 
-function slurm-operator::prerequisites() {
-	helm repo add jetstack https://charts.jetstack.io
+function extras::install() {
+	local chartName
+
+	helm repo add mariadb-operator https://helm.mariadb.com/mariadb-operator
+	helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	helm repo add kedacore https://kedacore.github.io/charts
+	helm repo add nfs-ganesha https://kubernetes-sigs.github.io/nfs-ganesha-server-and-external-provisioner/
 	helm repo update
 
-	local certManager="cert-manager"
-	if [ "$(helm list --all-namespaces --short --filter="$certManager" | wc -l)" -eq 0 ]; then
-		helm install "$certManager" jetstack/cert-manager \
-			--namespace "$certManager" --create-namespace --set crds.enabled=true
+	chartName=mariadb-operator
+	if ! helm::find "$chartName"; then
+		helm install "$chartName" mariadb-operator/mariadb-operator \
+			--namespace mariadb --create-namespace \
+			--set 'crds.enabled=true'
 	fi
-}
 
-function slurm-operator::helm() {
-	slurm-operator::prerequisites
-
-	local slurm_values_yaml="$ROOT_DIR/helm/slurm-operator/values-dev.yaml"
-	if [ ! -f "$slurm_values_yaml" ]; then
-		echo "ERROR: Missing values file: $slurm_values_yaml"
-		exit 1
+	chartName=metrics-server
+	if ! helm::find "$chartName"; then
+		helm install "$chartName" metrics-server/metrics-server \
+			--namespace metrics-server --create-namespace \
+			--set args="{--kubelet-insecure-tls}"
 	fi
-	local helm_release="slurm-operator"
-	if [ "$(helm list --all-namespaces --short --filter="$helm_release" | wc -l)" -eq 0 ]; then
-		helm install "$helm_release" "$ROOT_DIR"/helm/slurm-operator/ -f "$slurm_values_yaml"
-	else
-		echo "WARNING: helm release '$helm_release' exists. Skipping."
-	fi
-}
 
-function slurm-operator::skaffold() {
-	slurm-operator::prerequisites
-	(
-		cd "$ROOT_DIR"/helm/slurm-operator
-		skaffold run
-	)
+	chartName=prometheus
+	if ! helm::find "$chartName"; then
+		helm install "$chartName" prometheus-community/kube-prometheus-stack \
+			--namespace prometheus --create-namespace \
+			--set installCRDs=true \
+			--set 'prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false'
+	fi
+
+	chartName=keda
+	if ! helm::find "$chartName"; then
+		helm install "$chartName" kedacore/keda \
+			--namespace keda --create-namespace
+	fi
+
+	chartName=nfs-server-provisioner
+	if ! helm::find "$chartName"; then
+		helm install "$chartName" nfs-ganesha/nfs-server-provisioner \
+			--namespace nfs --create-namespace
+	fi
 }
 
 function main::help() {
 	cat <<EOF
 $(basename "$0") - Manage a kind cluster for local testing/development
 
-	usage: $(basename "$0") [--create|--delete] [--config=KIND_CONFIG_PATH]
-	        [--install|--uninstall] [--operator] [--slurm] [--helm]
+	usage: $(basename "$0") [--config=KIND_CONFIG_PATH]
+	        [--recreate|--delete]
+	        [--core][--extras][--all]
+	        [--crds][--operator][--slurm]
 	        [-h|--help] [KIND_CLUSTER_NAME]
 
-ONESHOT OPTIONS:
-	--create            Create kind cluster and nothing else.
-	--delete            Delete kind cluster and nothing else.
-	--install           Install dependent helm releases and nothing else.
-	--uninstall         Uninstall all helm releases and nothing else.
+KIND OPTIONS:
+	--config=PATH       Use the specified Kind config when creating.
+	--recreate          Delete the Kind cluster and continue.
+	--delete            Delete the Kind cluster and exit.
 
-OPTIONS:
-	--config=PATH       Use the specified kind config when creating.
-	--helm              Deploy with helm instead of skaffold.
-	--operator          Deploy helm/slurm-operator with skaffold.
-	--slurm             Deploy helm/slurm with skaffold.
+HELM OPTIONS:
+	--all               Equivalent of: --core --extras
+	--extras            Install extra charts (e.g. prometheus, keda, etc..).
+	--core              Equivalent of: --crds --operator --slurm
+	--crds              Install the operator CRDs chart.
+	--operator          Install the operator chart.
+	--slurm             Install the slurm chart.
 
 HELP OPTIONS:
 	--debug             Show script debug information.
@@ -171,111 +210,65 @@ HELP OPTIONS:
 EOF
 }
 
-function main() {
-	if $FLAG_DEBUG; then
-		set -x
-	fi
-	local cluster_name="${1:-"kind"}"
-	if $FLAG_DELETE; then
-		kind::delete "$cluster_name"
-		return
-	elif $FLAG_UNINSTALL; then
-		helm::uninstall
-		return
-	elif $FLAG_CREATE; then
-		kind::start "$cluster_name" "$FLAG_CONFIG"
-		return
-	fi
-
-	kind::start "$cluster_name" "$FLAG_CONFIG"
-
-	if $FLAG_INSTALL; then
-		helm::install
-		return
-	fi
-	if $FLAG_OPERATOR; then
-		if $FLAG_HELM; then
-			slurm-operator::helm
-		else
-			slurm-operator::skaffold
-		fi
-	fi
-	if $FLAG_SLURM; then
-		if $FLAG_HELM; then
-			slurm::helm
-		else
-			slurm::skaffold
-		fi
-	fi
-}
-
-FLAG_DEBUG=false
-FLAG_CREATE=false
-FLAG_CONFIG="$ROOT_DIR/hack/kind-config.yaml"
-FLAG_DELETE=false
-FLAG_HELM=false
-FLAG_INSTALL=false
-FLAG_UNINSTALL=false
-FLAG_SLURM=false
-FLAG_OPERATOR=false
+OPT_DEBUG=false
+OPT_RECREATE=false
+OPT_CONFIG="$ROOT_DIR/hack/kind.yaml"
+OPT_DELETE=false
+OPT_OPERATOR_CRDS=false
+OPT_OPERATOR=false
+OPT_SLURM=false
+OPT_EXTRAS=false
 
 SHORT="+h"
-LONG="create,config:,delete,debug,helm,slurm,operator,install,uninstall,help"
+LONG="debug,config:,recreate,delete,crds,operator,slurm,all,extras,core,help"
 OPTS="$(getopt -a --options "$SHORT" --longoptions "$LONG" -- "$@")"
 eval set -- "${OPTS}"
 while :; do
 	case "$1" in
 	--debug)
-		FLAG_DEBUG=true
+		OPT_DEBUG=true
 		shift
-		;;
-	--create)
-		FLAG_CREATE=true
-		shift
-		if $FLAG_CREATE && $FLAG_DELETE; then
-			echo "Flags --create and --delete are mutually exclusive!"
-			exit 1
-		fi
 		;;
 	--config)
-		FLAG_CONFIG="$2"
+		OPT_CONFIG="$2"
 		shift 2
 		;;
+	--recreate)
+		OPT_RECREATE=true
+		shift
+		;;
 	--delete)
-		FLAG_DELETE=true
-		shift
-		if $FLAG_CREATE && $FLAG_DELETE; then
-			echo "Flags --create and --delete are mutually exclusive!"
-			exit 1
-		fi
-		;;
-	--helm)
-		FLAG_HELM=true
+		OPT_DELETE=true
 		shift
 		;;
-	--slurm)
-		FLAG_SLURM=true
+	--crds)
+		OPT_OPERATOR_CRDS=true
 		shift
 		;;
 	--operator)
-		FLAG_OPERATOR=true
+		OPT_OPERATOR=true
 		shift
 		;;
-	--install)
-		FLAG_INSTALL=true
+	--slurm)
+		OPT_SLURM=true
 		shift
-		if $FLAG_INSTALL && $FLAG_UNINSTALL; then
-			echo "Flags --install and --uninstall are mutually exclusive!"
-			exit 1
-		fi
 		;;
-	--uninstall)
-		FLAG_UNINSTALL=true
+	--all)
+		OPT_OPERATOR_CRDS=true
+		OPT_OPERATOR=true
+		OPT_SLURM=true
+		OPT_EXTRAS=true
 		shift
-		if $FLAG_INSTALL && $FLAG_UNINSTALL; then
-			echo "Flags --install and --uninstall are mutually exclusive!"
-			exit 1
-		fi
+		;;
+	--extras)
+		OPT_EXTRAS=true
+		shift
+		;;
+	--core)
+		OPT_OPERATOR_CRDS=true
+		OPT_OPERATOR=true
+		OPT_SLURM=true
+		shift
 		;;
 	-h | --help)
 		main::help
@@ -287,9 +280,45 @@ while :; do
 		break
 		;;
 	*)
-		log::error "Unknown option: $1"
+		echo "Unknown option: $1" >&2
 		exit 1
 		;;
 	esac
 done
+
+function main() {
+	if $OPT_DEBUG; then
+		set -x
+	fi
+	local cluster_name="${1:-"kind"}"
+	if $OPT_DELETE || $OPT_RECREATE; then
+		kind::delete "$cluster_name"
+		$OPT_DELETE && return
+	fi
+
+	kind::start "$cluster_name" "$OPT_CONFIG"
+
+	make values-dev || true
+
+	if $OPT_EXTRAS; then
+		extras::install
+	fi
+
+	if $OPT_OPERATOR_CRDS; then
+		slurm-operator-crds::install
+	fi
+	if $OPT_OPERATOR; then
+		slurm-operator::install
+	fi
+	if $OPT_SLURM; then
+		slurm::install
+	fi
+
+	if $OPT_EXTRAS; then
+		until kubectl apply -f "$DIR"/resources; do
+			sleep 2
+		done
+	fi
+}
+
 main "$@"

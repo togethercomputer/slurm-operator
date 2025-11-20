@@ -7,6 +7,9 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceRoot}/cmd/manager/main.go",
+      "env": {
+        "DEBUG": "1"
+      },
       "args": [
         "--zap-log-level=5"
       ]

@@ -18,19 +18,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/utils"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/structutils"
 )
 
 func TestNodeSetReconciler_truncateHistory(t *testing.T) {
-	utilruntime.Must(slinkyv1alpha1.AddToScheme(clientgoscheme.Scheme))
+	utilruntime.Must(slinkyv1beta1.AddToScheme(clientgoscheme.Scheme))
 	const clusterName = "slurm"
 	type fields struct {
 		Client client.Client
 	}
 	type args struct {
 		ctx       context.Context
-		nodeset   *slinkyv1alpha1.NodeSet
+		nodeset   *slinkyv1beta1.NodeSet
 		revisions []*appsv1.ControllerRevision
 		current   *appsv1.ControllerRevision
 		update    *appsv1.ControllerRevision
@@ -62,7 +62,7 @@ func TestNodeSetReconciler_truncateHistory(t *testing.T) {
 				args: args{
 					ctx:       context.TODO(),
 					nodeset:   nodeset.DeepCopy(),
-					revisions: utils.ReferenceList(revisionList.Items),
+					revisions: structutils.ReferenceList(revisionList.Items),
 					current:   revisionList.Items[0].DeepCopy(),
 					update:    revisionList.Items[1].DeepCopy(),
 				},
@@ -127,7 +127,7 @@ func TestNodeSetReconciler_truncateHistory(t *testing.T) {
 				args: args{
 					ctx:       context.TODO(),
 					nodeset:   nodeset.DeepCopy(),
-					revisions: utils.ReferenceList(revisionList.Items),
+					revisions: structutils.ReferenceList(revisionList.Items),
 					current:   revisionList.Items[0].DeepCopy(),
 					update:    revisionList.Items[1].DeepCopy(),
 				},
@@ -146,12 +146,12 @@ func TestNodeSetReconciler_truncateHistory(t *testing.T) {
 }
 
 func TestNodeSetReconciler_getNodeSetRevisions(t *testing.T) {
-	utilruntime.Must(slinkyv1alpha1.AddToScheme(clientgoscheme.Scheme))
+	utilruntime.Must(slinkyv1beta1.AddToScheme(clientgoscheme.Scheme))
 	type fields struct {
 		Client client.Client
 	}
 	type args struct {
-		nodeset   *slinkyv1alpha1.NodeSet
+		nodeset   *slinkyv1beta1.NodeSet
 		revisions []*appsv1.ControllerRevision
 	}
 	type testCaseFields struct {
@@ -199,7 +199,7 @@ func TestNodeSetReconciler_getNodeSetRevisions(t *testing.T) {
 				},
 				args: args{
 					nodeset:   nodeset.DeepCopy(),
-					revisions: utils.ReferenceList(revisionList.Items),
+					revisions: structutils.ReferenceList(revisionList.Items),
 				},
 				want:    revisionList.Items[2].DeepCopy(),
 				want1:   revisionList.Items[2].DeepCopy(),
@@ -243,7 +243,7 @@ func TestNodeSetReconciler_getNodeSetRevisions(t *testing.T) {
 				},
 				args: args{
 					nodeset:   nodeset.DeepCopy(),
-					revisions: utils.ReferenceList(revisionList.Items),
+					revisions: structutils.ReferenceList(revisionList.Items),
 				},
 				want:    revisionList.Items[1].DeepCopy(),
 				want1:   revisionList.Items[2].DeepCopy(),

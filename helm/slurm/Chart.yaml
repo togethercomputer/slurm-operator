@@ -1,20 +1,25 @@
 ---
-annotations:
-  category: HPC
-  licenses: Apache-2.0
 apiVersion: v2
-appVersion: "24.11"
-description: Helm Chart for Slurm HPC Workload Manager
-name: slurm
-type: application
-version: 0.2.0
+kubeVersion: ">= 1.29.0-0"
 
-dependencies:
-  - name: mariadb
-    repository: oci://registry-1.docker.io/bitnamicharts
-    version: ~16.3
-    condition: mariadb.enabled
-  - name: slurm-exporter
-    repository: oci://ghcr.io/slinkyproject/charts
-    version: ~0.2.0
-    condition: slurm-exporter.enabled
+name: slurm
+description: Slurm Cluster
+type: application
+appVersion: "25.11"
+version: 1.0.0
+
+annotations:
+  license: Apache-2.0
+
+home: https://slurm.schedmd.com/
+icon: https://github.com/SlinkyProject/docs/blob/main/docs/_static/images/slurm-square-500.png
+
+sources:
+  - https://github.com/SchedMD/slurm
+  - https://github.com/SlinkyProject/containers
+  - https://github.com/SlinkyProject/slurm-operator
+
+maintainers:
+  - name: SchedMD LLC.
+    email: slinky@schedmd.com
+    url: https://support.schedmd.com/

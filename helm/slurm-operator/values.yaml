@@ -1,176 +1,140 @@
 # SPDX-FileCopyrightText: Copyright (C) SchedMD LLC.
 # SPDX-License-Identifier: Apache-2.0
 
-#
-# -- (string)
-# Overrides the name of the release.
+# -- Overrides the name of the release.
 nameOverride: ""
 
-#
-# -- (string)
-# Overrides the full name of the release.
+# -- Overrides the full name of the release.
 fullnameOverride: ""
 
-#
-# -- (string)
-# Overrides the namespace of the release.
+# -- Overrides the namespace of the release.
 namespaceOverride: ""
 
-#
-# -- (list)
-# Sets the image pull secrets.
+# -- Sets the image pull secrets.
 # Ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
   # - name: regcred
 
-#
-# -- (string)
-# Set the priority class to use.
+# -- Set the default image pull policy.
+imagePullPolicy: IfNotPresent
+
+# -- Set the priority class to use.
 # Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#priorityclass
 priorityClassName: ""
 
-#
+# -- Configure Custom Resource Definitions (CRDs).
+crds:
+  # -- Whether this helm chart should manage the CRD and its upgrades.
+  enabled: false
+
 # Operator configurations.
 operator:
-  #
-  # -- (bool)
-  # Enables the operator.
+  # -- Enables the operator.
   enabled: true
-  #
-  # -- (integer)
-  # Set the number of replicas to deploy.
+  # -- Set the number of replicas to deploy.
   replicas: 1
-  #
-  # -- (string)
-  # Set the image pull policy.
+  # -- Set the image pull policy.
   imagePullPolicy: IfNotPresent
-  #
-  # Image configurations.
+  # -- The image to use, `${repository}:${tag}`.
+  # Ref: https://kubernetes.io/docs/concepts/containers/images/#image-names
   image:
-    #
-    # -- (string)
-    # Sets the image repository to use.
     repository: ghcr.io/slinkyproject/slurm-operator
-    #
-    # -- (string)
-    # Sets the image tag to use.
-    # @default -- The Release version.
-    tag: 0.2.0
-  #
+    tag: ""
   # Service account configurations.
   serviceAccount:
-    #
-    # -- (bool)
-    # Allows chart to create the service account.
+    # -- Allows chart to create the service account.
     create: true
-    #
-    # -- (string)
-    # Set the service account to use (and create).
+    # -- Set the service account to use (and create).
     name: ""
-  #
-  # -- (object)
-  # Set affinity for Kubernetes Pod scheduling.
+  # -- Affinity for pod assignment.
   # Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
   affinity: {}
-  #
-  # -- (object)
-  # Set container resource requests and limits for Kubernetes Pod scheduling.
+  # -- Tolerations for pod assignment.
+  # Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  tolerations: []
+    # - key: key1
+    #   operator: Exists
+    #   effect: NoSchedule
+  # -- The container resource limits and requests.
   # Ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#resource-requests-and-limits-of-pod-and-container
   resources: {}
     # requests:
     #   cpu: 1
     #   memory: 1Gi
-    # limits:
-    #   cpu: 2
-    #   memory: 4Gi
-  #
-  # -- (integer)
-  # Set the max concurrent workers for the Cluster controller.
-  clusterWorkers: 1
-  #
-  # -- (integer)
-  # Set the max concurrent workers for the NodeSet controller.
-  nodesetWorkers: 1
-  #
-  # -- (string)
-  # Set the log level by string (e.g. error, info, debug) or number (e.g. 1..5).
+  # -- Set the max concurrent workers for the Accounting controller.
+  accountingWorkers: 4
+  # -- Set the max concurrent workers for the Controller controller.
+  controllerWorkers: 4
+  # -- Set the max concurrent workers for the LoginSet controller.
+  loginsetWorkers: 4
+  # -- Set the max concurrent workers for the NodeSet controller.
+  nodesetWorkers: 4
+  # -- Set the max concurrent workers for the Restapi controller.
+  restapiWorkers: 4
+  # -- Set the max concurrent workers for the Token controller.
+  tokenWorkers: 4
+  # -- Set the max concurrent workers for the SlurmClient controller.
+  slurmclientWorkers: 2
+  # -- Set the log level by string (e.g. error, info, debug) or number (e.g. 1..5).
   logLevel: info
+  # -- Set the port used for health checks.
+  healthPort: 8081
+  # -- Set the port used by the metrics server. Value of "0" will disable it.
+  metricsPort: 8080
 
-#
+
 # Webhook configurations.
 webhook:
-  #
-  # -- (bool)
-  # Enables the webhook.
+  # -- Enable the webhook.
   enabled: true
-  #
-  # -- (integer)
-  # Set the number of replicas to deploy.
+  # -- Set the number of replicas to deploy.
   replicas: 1
-  #
-  # -- (string)
-  # Set the image pull policy.
+  # -- Set the image pull policy.
   imagePullPolicy: IfNotPresent
-  #
-  # Image configurations.
+  # -- The image to use, `${repository}:${tag}`.
+  # Ref: https://kubernetes.io/docs/concepts/containers/images/#image-names
   image:
-    #
-    # -- (string)
-    # Sets the image repository to use.
     repository: ghcr.io/slinkyproject/slurm-operator-webhook
-    #
-    # -- (string)
-    # Sets the image tag to use.
-    # @default -- The Release version.
-    tag: 0.2.0
+    tag: ""
   #
   # Service account configurations.
   serviceAccount:
-    #
-    # -- (bool)
-    # Allows chart to create the service account.
+    # -- Allows chart to create the service account.
     create: true
-    #
-    # -- (string)
-    # Set the service account to use (and create).
+    # -- Set the service account to use (and create).
     name: ""
-  #
-  # -- (object)
-  # Set affinity for Kubernetes Pod scheduling.
+  # -- Set the timeout period for calls.
+  timeoutSeconds: 10
+  # -- Affinity for pod assignment.
   # Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
   affinity: {}
-  #
-  # -- (object)
-  # Set container resource requests and limits for Kubernetes Pod scheduling.
+  # -- Tolerations for pod assignment.
+  # Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  tolerations: []
+    # - key: key1
+    #   operator: Exists
+    #   effect: NoSchedule
+  # -- The container resource limits and requests.
   # Ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#resource-requests-and-limits-of-pod-and-container
   resources: {}
     # requests:
     #   cpu: 1
     #   memory: 1Gi
-    # limits:
-    #   cpu: 2
-    #   memory: 4Gi
-  #
-  # -- (string)
-  # Set the log level by string (e.g. error, info, debug) or number (e.g. 1..5).
+  # -- Set the log level by string (e.g. error, info, debug) or number (e.g. 1..5).
   logLevel: info
+  # -- Set the port used for health checks.
+  healthPort: 8081
+  # -- Set the port used by the metrics server. Value of "0" will disable it.
+  metricsPort: 0
 
 #
 # Cert-Manager certificate configurations.
 certManager:
-  #
-  # -- (bool)
-  # Enables cert-manager for certificate management.
+  # -- Enable cert-manager for certificate management.
   enabled: true
-  #
-  # -- (string)
-  # The secret to be (created and) mounted.
+  # -- The secret to be (created and) mounted.
   secretName: slurm-operator-webhook-ca
-  #
-  # -- (string)
-  # Duration of certificate life.
+  # -- Duration of certificate life.
   duration: 43800h0m0s # 5 year
-  #
-  # -- (string)
-  # Certificate renewal time. Should be before the expiration.
+  # -- Certificate renewal time. Should be before the expiration.
   renewBefore: 8760h0m0s # 1 year
