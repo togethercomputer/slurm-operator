@@ -217,12 +217,12 @@ func (rh *realHistory) ReleaseControllerRevision(
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// We ignore deleted revisions.
-			return nil, nil
+			return nil, nil //nolint:nilnil
 		}
 		if apierrors.IsInvalid(err) {
 			// We ignore cases where the parent no longer owns the revision or
 			// where the revision has no owner.
-			return nil, nil
+			return nil, nil //nolint:nilnil
 		}
 		return nil, err
 	}

@@ -7,13 +7,14 @@ package nodeset
 import (
 	"context"
 	"encoding/json"
+	"maps"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/controller/history"
 	"k8s.io/utils/ptr"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
 	"github.com/SlinkyProject/slurm-operator/internal/utils/historycontrol"
 )
 
@@ -24,7 +25,7 @@ import (
 // expects that revisions is sorted when supplied.
 func (r *NodeSetReconciler) truncateHistory(
 	ctx context.Context,
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	revisions []*appsv1.ControllerRevision,
 	current, update *appsv1.ControllerRevision,
 ) error {
@@ -58,7 +59,7 @@ func (r *NodeSetReconciler) truncateHistory(
 	}
 	// delete any non-live history to maintain the revision limit.
 	history = history[:(historyLen - historyLimit)]
-	for i := 0; i < len(history); i++ {
+	for i := range history {
 		if err := r.historyControl.DeleteControllerRevision(history[i]); err != nil {
 			return err
 		}
@@ -73,7 +74,7 @@ func (r *NodeSetReconciler) truncateHistory(
 // a new revision, or modify the Revision of an existing revision if an update to nodeset is detected.
 // This method expects that revisions is sorted when supplied.
 func (r *NodeSetReconciler) getNodeSetRevisions(
-	nodeset *slinkyv1alpha1.NodeSet,
+	nodeset *slinkyv1beta1.NodeSet,
 	revisions []*appsv1.ControllerRevision,
 ) (*appsv1.ControllerRevision, *appsv1.ControllerRevision, int32, error) {
 	var currentRevision, updateRevision *appsv1.ControllerRevision
@@ -146,31 +147,29 @@ func nextRevision(revisions []*appsv1.ControllerRevision) int64 {
 	return revisions[count-1].Revision + 1
 }
 
-// newRevision creates a new ControllerRevision containing a patch that reapplies the target state of nodeset.
-// The Revision of the returned ControllerRevision is nodeset to revision. If the returned error is nil, the returned
-// ControllerRevision is valid. StatefulSet revisions are stored as patches that re-apply the current state of nodeset
-// to a new StatefulSet using a strategic merge patch to replace the saved state of the new StatefulSet.
-func newRevision(nodeset *slinkyv1alpha1.NodeSet, revision int64, collisionCount *int32) (*appsv1.ControllerRevision, error) {
+// newRevision creates a new ControllerRevision containing a patch that reapplies the target state of set.
+// The Revision of the returned ControllerRevision is set to revision. If the returned error is nil, the returned
+// ControllerRevision is valid. NodeSet revisions are stored as patches that re-apply the current state of NodeSet
+// to a new NodeSet using a strategic merge patch to replace the saved state of the new NodeSet.
+func newRevision(nodeset *slinkyv1beta1.NodeSet, revision int64, collisionCount *int32) (*appsv1.ControllerRevision, error) {
 	patch, err := getPatch(nodeset)
 	if err != nil {
 		return nil, err
 	}
 	cr, err := history.NewControllerRevision(
 		nodeset,
-		slinkyv1alpha1.NodeSetGVK,
-		nodeset.Spec.Template.Labels,
+		slinkyv1beta1.NodeSetGVK,
+		nodeset.Spec.Template.PodMetadata.Labels,
 		runtime.RawExtension{Raw: patch},
 		revision,
 		collisionCount)
 	if err != nil {
 		return nil, err
 	}
-	if cr.ObjectMeta.Annotations == nil {
-		cr.ObjectMeta.Annotations = make(map[string]string)
+	if cr.Annotations == nil {
+		cr.Annotations = make(map[string]string)
 	}
-	for key, value := range nodeset.Annotations {
-		cr.ObjectMeta.Annotations[key] = value
-	}
+	maps.Copy(cr.Annotations, nodeset.Annotations)
 	return cr, nil
 }
 
@@ -178,14 +177,13 @@ func newRevision(nodeset *slinkyv1alpha1.NodeSet, revision int64, collisionCount
 // previous version. If the returned error is nil the patch is valid. The current state that we save is just the
 // PodSpecTemplate. We can modify this later to encompass more state (or less) and remain compatible with previously
 // recorded patches.
-func getPatch(nodeset *slinkyv1alpha1.NodeSet) ([]byte, error) {
-	setBytes, err := json.Marshal(nodeset)
+func getPatch(nodeset *slinkyv1beta1.NodeSet) ([]byte, error) {
+	crBytes, err := json.Marshal(nodeset)
 	if err != nil {
 		return nil, err
 	}
 	var raw map[string]any
-	err = json.Unmarshal(setBytes, &raw)
-	if err != nil {
+	if err := json.Unmarshal(crBytes, &raw); err != nil {
 		return nil, err
 	}
 	objCopy := make(map[string]any)
@@ -196,6 +194,17 @@ func getPatch(nodeset *slinkyv1alpha1.NodeSet) ([]byte, error) {
 	template := spec["template"].(map[string]any)
 	specCopy["template"] = template
 	template["$patch"] = "replace"
+	if slurmd, ok := spec["slurmd"].(map[string]any); ok {
+		slurmd["$patch"] = "replace"
+		specCopy["slurmd"] = slurmd
+	}
+	if extraConf, ok := spec["extraConf"].(string); ok {
+		specCopy["extraConf"] = extraConf
+	}
+	if logfile, ok := spec["logfile"].(map[string]any); ok {
+		logfile["$patch"] = "replace"
+		specCopy["logfile"] = logfile
+	}
 	objCopy["spec"] = specCopy
 	patch, err := json.Marshal(objCopy)
 	return patch, err

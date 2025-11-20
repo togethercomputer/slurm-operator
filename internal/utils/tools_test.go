@@ -5,6 +5,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -70,7 +71,7 @@ func TestSlowStartBatch(t *testing.T) {
 		if successes != test.expectedSuccesses {
 			t.Errorf("%s: unexpected processed batch size, expected %d, got %d", test.name, test.expectedSuccesses, successes)
 		}
-		if err != test.expectedErr {
+		if !errors.Is(err, test.expectedErr) {
 			t.Errorf("%s: unexpected processed batch size, expected %v, got %v", test.name, test.expectedErr, err)
 		}
 		// verify that slowStartBatch stops trying more calls after a batch fails

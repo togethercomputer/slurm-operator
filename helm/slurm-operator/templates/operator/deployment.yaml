@@ -12,13 +12,11 @@ metadata:
   labels:
     {{- include "slurm-operator.operator.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas }}
+  replicas: {{ .Values.operator.replicas }}
   revisionHistoryLimit: 0
   selector:
     matchLabels:
       {{- include "slurm-operator.operator.selectorLabels" . | nindent 6 }}
-  strategy:
-    type: Recreate
   template:
     metadata:
       labels:
@@ -31,20 +29,62 @@ spec:
       containers:
         - name: slurm-operator
           image: {{ include "slurm-operator.operator.imageRef" . }}
-          imagePullPolicy: {{ include "slurm-operator.imagePullPolicy" . }}
+          imagePullPolicy: {{ include "slurm-operator.operator.imagePullPolicy" . }}
           args:
-            - --cluster-workers
-            - {{ default 1 .Values.operator.clusterWorkers | quote }}
+            {{- with .Values.operator.accountingWorkers }}
+            - --accounting-workers
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.accountingWorkers */}}
+            {{- with .Values.operator.controllerWorkers }}
+            - --controller-workers
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.controllerWorkers */}}
+            {{- with .Values.operator.loginsetWorkers }}
+            - --loginset-workers
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.loginsetWorkers */}}
+            {{- with .Values.operator.nodesetWorkers }}
             - --nodeset-workers
-            - {{ default 1 .Values.operator.nodesetWorkers | quote }}
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.nodesetWorkers */}}
+            {{- with .Values.operator.restapiWorkers }}
+            - --restapi-workers
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.restapiWorkers */}}
+            {{- with .Values.operator.tokenWorkers }}
+            - --token-workers
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.tokenWorkers */}}
+            {{- with .Values.operator.slurmclientWorkers }}
+            - --slurmclient-workers
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.slurmclientWorkers */}}
+            {{- with .Values.operator.logLevel }}
             - --zap-log-level
-            - {{ default "info" .Values.operator.logLevel | quote }}
+            - {{ . | quote }}
+            {{- end }}{{- /* with .Values.operator.logLevel */}}
+            {{- with .Values.operator.healthPort }}
+            - --health-addr
+            - {{ printf ":%s" (toString .) | quote }}
+            {{- end }}{{- /* with .Values.operator.healthPort */}}
+            {{- with .Values.operator.metricsPort }}
+            - --metrics-addr
+            - {{ printf ":%s" (toString .) | quote }}
+            {{- end }}{{- /* with .Values.operator.metricsPort */}}
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8081
+              port: {{ .Values.operator.healthPort | default 8081 }}
           readinessProbe:
             httpGet:
               path: /readyz
-              port: 8081
+              port: {{ .Values.operator.healthPort | default 8081 }}
+      {{- with .Values.operator.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}{{- /* with .Values.operator.affinity */}}
+      {{- with .Values.operator.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}{{- /* with .Values.operator.tolerations */}}
 {{- end }}{{- /* if .Values.operator.enabled */}}

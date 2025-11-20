@@ -47,6 +47,7 @@ Common labels
 */}}
 {{- define "slurm.labels" -}}
 helm.sh/chart: {{ include "slurm.chart" . }}
+app.kubernetes.io/part-of: slurm
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -54,32 +55,109 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Common imagePullPolicy
+Format image reference from image object.
 */}}
-{{- define "slurm.imagePullPolicy" -}}
-{{ .Values.imagePullPolicy | default "IfNotPresent" }}
-{{- end }}
+{{- define "format-image" -}}
+{{- $repository := required "image repository is required" .repository -}}
+{{- $tag := required "image tag is required" .tag -}}
+{{- printf "%s:%s" $repository $tag | toString -}}
+{{- end -}}
 
 {{/*
-Common imagePullSecrets
+Format container object.
 */}}
-{{- define "slurm.imagePullSecrets" -}}
-{{- with .Values.imagePullSecrets -}}
-imagePullSecrets:
-  {{- . | toYaml | nindent 2 }}
-{{- end }}
-{{- end }}
+{{- define "format-container" -}}
+{{- $container := omit . "image" -}}
+{{- $_ := set $container "image" (include "format-image" .image) -}}
+{{ toYaml $container }}
+{{- end -}}
 
 {{/*
-Determine slurm image repository
+Format pod template object.
 */}}
-{{- define "slurm.image.repository" -}}
-{{- print "ghcr.io/slinkyproject" -}}
-{{- end }}
+{{- define "format-podTemplate" -}}
+{{- with . -}}
+template:
+  {{- include "format-metadata" . | nindent 2 -}}
+  {{- include "format-podSpec" . | nindent 2 -}}
+{{- end -}}
+{{- end -}}
 
 {{/*
-Define image tag
+Format pod metadata object.
 */}}
-{{- define "slurm.image.tag" -}}
-{{- printf "%s-ubuntu24.04" .Chart.AppVersion -}}
-{{- end }}
+{{- define "format-metadata" -}}
+{{- with .metadata -}}
+metadata:
+  {{- toYaml . | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Format pod spec object.
+*/}}
+{{- define "format-podSpec" -}}
+{{- with .spec -}}
+spec:
+  {{- toYaml . | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Format pod service object.
+*/}}
+{{- define "format-service" -}}
+{{- with . -}}
+{{- $service := omit . "metadata" "spec" -}}
+service:
+  {{- include "format-metadata" . | nindent 2 -}}
+  {{- include "format-serviceSpec" . | nindent 2 -}}
+  {{- with $service -}}
+  {{- toYaml . | nindent 2 -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Format service spec object.
+*/}}
+{{- define "format-serviceSpec" -}}
+{{- with .spec -}}
+spec:
+  {{- toYaml . | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Converts a list to a key value CSV.
+Ref: https://github.com/helm/helm/issues/9379
+*/}}
+{{- define "_toList" -}}
+{{- $items := list -}}
+{{- range $key, $val := . -}}
+  {{- if $val -}}
+    {{- $items = append $items (printf "%s=%s" $key (join "," $val)) -}}
+  {{- end -}}
+{{- end -}}
+{{- join ";" $items -}}
+{{- end -}}
+
+{{/*
+Parse resources object and convert units.
+Ref: https://github.com/helm/helm/issues/11376#issuecomment-1256831105
+*/}}
+{{- define "resource-quantity" -}}
+{{- $value := . -}}
+{{- $unit := 1.0 -}}
+{{- if typeIs "string" . -}}
+  {{- $base2 := dict "Ki" 0x1p10 "Mi" 0x1p20 "Gi" 0x1p30 "Ti" 0x1p40 "Pi" 0x1p50 "Ei" 0x1p60 -}}
+  {{- $base10 := dict "m" 1e-3 "k" 1e3 "M" 1e6 "G" 1e9 "T" 1e12 "P" 1e15 "E" 1e18 -}}
+  {{- range $k, $v := merge $base2 $base10 -}}
+    {{- if hasSuffix $k $ -}}
+      {{- $value = trimSuffix $k $ -}}
+      {{- $unit = $v -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- mulf (float64 $value) $unit -}}
+{{- end -}}

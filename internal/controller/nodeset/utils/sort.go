@@ -12,8 +12,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/utils"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/mathutils"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/podutils"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/structutils"
 )
 
 // ActivePods type allows custom sorting of pods so a controller can pick the best ones to delete.
@@ -51,22 +53,22 @@ func (o ActivePods) Less(i, j int) bool {
 	}
 
 	// Step: lower pod-deletion-cost < higher pod-deletion-cost
-	podDeletionCost1, _ := utils.GetNumberFromAnnotations(pod1.Annotations, slinkyv1alpha1.AnnotationPodDeletionCost)
-	podDeletionCost2, _ := utils.GetNumberFromAnnotations(pod2.Annotations, slinkyv1alpha1.AnnotationPodDeletionCost)
+	podDeletionCost1, _ := structutils.GetNumberFromAnnotations(pod1.Annotations, slinkyv1beta1.AnnotationPodDeletionCost)
+	podDeletionCost2, _ := structutils.GetNumberFromAnnotations(pod2.Annotations, slinkyv1beta1.AnnotationPodDeletionCost)
 	if podDeletionCost1 != podDeletionCost2 {
 		return podDeletionCost1 < podDeletionCost2
 	}
 
-	// Step: ealier deadline timestamp < later deadline timestamp
-	podDeadline1, _ := utils.GetTimeFromAnnotations(pod1.Annotations, slinkyv1alpha1.AnnotationPodDeadline)
-	podDeadline2, _ := utils.GetTimeFromAnnotations(pod2.Annotations, slinkyv1alpha1.AnnotationPodDeadline)
+	// Step: earlier deadline timestamp < later deadline timestamp
+	podDeadline1, _ := structutils.GetTimeFromAnnotations(pod1.Annotations, slinkyv1beta1.AnnotationPodDeadline)
+	podDeadline2, _ := structutils.GetTimeFromAnnotations(pod2.Annotations, slinkyv1beta1.AnnotationPodDeadline)
 	if !podDeadline1.Equal(podDeadline2) {
 		return podDeadline1.Before(podDeadline2)
 	}
 
 	// Step: cordon < not cordon
-	podCordon1, _ := utils.GetBoolFromAnnotations(pod1.Annotations, slinkyv1alpha1.AnnotationPodCordon)
-	podCordon2, _ := utils.GetBoolFromAnnotations(pod2.Annotations, slinkyv1alpha1.AnnotationPodCordon)
+	podCordon1, _ := structutils.GetBoolFromAnnotations(pod1.Annotations, slinkyv1beta1.AnnotationPodCordon)
+	podCordon2, _ := structutils.GetBoolFromAnnotations(pod2.Annotations, slinkyv1beta1.AnnotationPodCordon)
 	if podCordon1 || podCordon2 {
 		return podCordon1
 	}
@@ -119,7 +121,7 @@ func afterOrZero(t1, t2 time.Time) bool {
 
 // SplitActivePods returns two list of pods partitioned by a number.
 func SplitActivePods(pods []*corev1.Pod, partition int) (pods1, pods2 []*corev1.Pod) {
-	pivot := utils.Clamp(partition, 0, len(pods))
+	pivot := mathutils.Clamp(partition, 0, len(pods))
 
 	pods1 = make([]*corev1.Pod, pivot)
 	pods2 = make([]*corev1.Pod, len(pods)-pivot)
@@ -129,4 +131,41 @@ func SplitActivePods(pods []*corev1.Pod, partition int) (pods1, pods2 []*corev1.
 	copy(pods2, pods[pivot:])
 
 	return pods1, pods2
+}
+
+// PodsByCreationTimestamp sorts a list of Pods by creation timestamp, using their names as a tie breaker.
+type PodsByCreationTimestamp []*corev1.Pod
+
+func (o PodsByCreationTimestamp) Len() int {
+	return len(o)
+}
+
+func (o PodsByCreationTimestamp) Swap(i, j int) {
+	o[i], o[j] = o[j], o[i]
+}
+
+func (o PodsByCreationTimestamp) Less(i, j int) bool {
+	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
+		return o[i].Name < o[j].Name
+	}
+	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+}
+
+// SplitUnhealthyPods returns lists of healthy and unhealthy pods.
+func SplitUnhealthyPods(pods []*corev1.Pod) (unhealthyPods, healthyPods []*corev1.Pod) {
+	var numUnhealthy int
+	for _, pod := range pods {
+		if !podutils.IsHealthy(pod) {
+			numUnhealthy++
+		}
+	}
+
+	unhealthyPods = make([]*corev1.Pod, numUnhealthy)
+	healthyPods = make([]*corev1.Pod, len(pods)-numUnhealthy)
+
+	sort.Sort(PodsByCreationTimestamp(pods))
+	copy(unhealthyPods, pods[:numUnhealthy])
+	copy(healthyPods, pods[numUnhealthy:])
+
+	return unhealthyPods, healthyPods
 }

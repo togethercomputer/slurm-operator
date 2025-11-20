@@ -5,14 +5,13 @@ package nodeset
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,8 +22,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	"github.com/SlinkyProject/slurm-operator/internal/resources"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	"github.com/SlinkyProject/slurm-operator/internal/clientmap"
+	"github.com/SlinkyProject/slurm-operator/internal/utils/testutils"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -37,16 +37,21 @@ var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
 
-// slurmClusters will be used to verify the cluster controller
+// clientMap will be used to verify the cluster controller
 // makes the correct updates based on Cluster CR create, update,
 // and delete operations. Additionally a fake slurm client will
 // be injected to control slurm object cache without requiring
 // a functioning slurm control plane and rest api.
-var slurmClusters *resources.Clusters
+var clientMap *clientmap.ClientMap
+
+func init() {
+	utilruntime.Must(scheme.AddToScheme(scheme.Scheme))
+	utilruntime.Must(slinkyv1beta1.AddToScheme(scheme.Scheme))
+}
 
 func TestHandlers(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Slinky Controller Suite")
+	RunSpecs(t, "NodeSet Controller Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -60,8 +65,7 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "..", "..", "config", "crd", "bases"),
 		},
 		ErrorIfCRDPathMissing: true,
-		BinaryAssetsDirectory: filepath.Join("..", "..", "..", "bin", "k8s",
-			fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH)),
+		BinaryAssetsDirectory: testutils.GetEnvTestBinary(filepath.Join("..", "..", "..")),
 	}
 
 	var err error
@@ -70,7 +74,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = slinkyv1alpha1.AddToScheme(scheme.Scheme)
+	err = slinkyv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme
@@ -85,14 +89,9 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	slurmClusters = resources.NewClusters()
+	clientMap = clientmap.NewClientMap()
 	eventCh := make(chan event.GenericEvent, 100)
-	err = (&NodeSetReconciler{
-		Client:        k8sManager.GetClient(),
-		Scheme:        k8sManager.GetScheme(),
-		SlurmClusters: slurmClusters,
-		EventCh:       eventCh,
-	}).SetupWithManager(k8sManager)
+	err = NewReconciler(k8sManager.GetClient(), clientMap, eventCh).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {

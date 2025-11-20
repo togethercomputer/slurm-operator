@@ -1,0 +1,34 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (C) SchedMD LLC.
+SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- $podMetadata := .Values.restapi.metadata | default dict -}}
+{{- $podSpec := .Values.restapi.podSpec | default dict -}}
+{{- $imagePullSecrets := concat list ($podSpec.imagePullSecrets | default list) (.Values.imagePullSecrets | default list) -}}
+{{- $_ := set $podSpec "imagePullSecrets" $imagePullSecrets -}}
+{{- $priorityClassName := $podSpec.priorityClassName | default .Values.priorityClassName -}}
+{{- $_ := set $podSpec "priorityClassName" $priorityClassName -}}
+{{- $podTemplate := dict "metadata" $podMetadata "spec" $podSpec -}}
+apiVersion: slinky.slurm.net/v1beta1
+kind: RestApi
+metadata:
+  name: {{ include "slurm.fullname" . }}
+  namespace: {{ include "slurm.namespace" . }}
+  labels:
+    {{- include "slurm.labels" . | nindent 4 }}
+spec:
+  controllerRef:
+    name: {{ include "slurm.fullname" . }}
+    namespace: {{ include "slurm.namespace" . }}
+  {{- with .Values.restapi.replicas }}
+  replicas: {{ . }}
+  {{- end }}{{- /* with .Values.restapi.replicas */}}
+  slurmrestd:
+    {{- include "format-container" .Values.restapi.slurmrestd | nindent 4 }}
+  {{- include "format-podTemplate" $podTemplate | nindent 2 }}
+  {{- if or (.Values.restapi.service.spec) (.Values.restapi.service.metadata) (omit .Values.restapi.service  "metadata" "spec") }}
+  {{- include "format-service" .Values.restapi.service | nindent 2 }}
+  {{ else }}
+  service: {}
+  {{- end }}{{- /* if or (.Values.restapi.service.spec) (.Values.restapi.service.metadata) (omit .Values.restapi.service  "metadata" "spec") */}}

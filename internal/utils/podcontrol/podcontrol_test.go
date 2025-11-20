@@ -29,7 +29,7 @@ func newReplicationController(replicas int) *corev1.ReplicationController {
 			ResourceVersion: "18",
 		},
 		Spec: corev1.ReplicationControllerSpec{
-			Replicas: ptr.To(int32(replicas)),
+			Replicas: ptr.To(int32(replicas)), //nolint:gosec // disable G115
 			Selector: map[string]string{"foo": "bar"},
 			Template: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{

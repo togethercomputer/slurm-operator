@@ -91,7 +91,7 @@ func (r *realPodControl) CreateThisPod(ctx context.Context, pod *corev1.Pod, obj
 func (r *realPodControl) DeletePod(ctx context.Context, namespace string, podName string, object runtime.Object) error {
 	accessor, err := meta.Accessor(object)
 	if err != nil {
-		return fmt.Errorf("object does not have ObjectMeta, %v", err)
+		return fmt.Errorf("object does not have ObjectMeta, %w", err)
 	}
 	logger := klog.FromContext(ctx)
 	logger.V(2).Info("Deleting pod", "controller", accessor.GetName(), "pod", klog.KRef(namespace, podName))
@@ -107,7 +107,7 @@ func (r *realPodControl) DeletePod(ctx context.Context, namespace string, podNam
 			return err
 		}
 		r.recorder.Eventf(object, corev1.EventTypeWarning, kubecontroller.FailedDeletePodReason, "Error deleting: %v", err)
-		return fmt.Errorf("unable to delete pods: %v", err)
+		return fmt.Errorf("unable to delete pods: %w", err)
 	}
 	r.recorder.Eventf(object, corev1.EventTypeNormal, kubecontroller.SuccessfulDeletePodReason, "Deleted pod: %v", podName)
 
@@ -141,7 +141,7 @@ func GetPodFromTemplate(template *corev1.PodTemplateSpec, parentObject runtime.O
 	desiredAnnotations := getPodsAnnotationSet(template)
 	accessor, err := meta.Accessor(parentObject)
 	if err != nil {
-		return nil, fmt.Errorf("parentObject does not have ObjectMeta, %v", err)
+		return nil, fmt.Errorf("parentObject does not have ObjectMeta, %w", err)
 	}
 	prefix := getPodsPrefix(accessor.GetName())
 
