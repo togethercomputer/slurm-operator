@@ -1,0 +1,13 @@
+---
+apiVersion: slinky.slurm.net/v1beta1
+kind: Token
+metadata:
+  name: slurm-token
+  namespace: slurm
+spec:
+  jwtHs256KeyRef:
+    name: slurm-auth-jwths256
+    key: jwt_hs256.key
+  username: foo
+  refresh: true
+  lifetime: 15m

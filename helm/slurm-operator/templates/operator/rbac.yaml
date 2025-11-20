@@ -20,9 +20,14 @@ metadata:
   namespace: {{ include "slurm-operator.namespace" . }}
 rules:
 - apiGroups:
-  - slinky.slurm.net
+  - ""
   resources:
-  - clusters
+  - configmaps
+  - events
+  - persistentvolumeclaims
+  - pods
+  - secrets
+  - services
   verbs:
   - create
   - delete
@@ -31,46 +36,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - slinky.slurm.net
-  resources:
-  - clusters/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - slinky.slurm.net
-  resources:
-  - clusters/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - slinky.slurm.net
-  resources:
-  - nodesets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - slinky.slurm.net
-  resources:
-  - nodesets/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - slinky.slurm.net
-  resources:
-  - nodesets/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - ""
   resources:
@@ -79,30 +44,21 @@ rules:
   - get
   - list
   - watch
+  - patch
 - apiGroups:
   - ""
   resources:
-  - pods
+  - pods/status
   verbs:
-  - create
-  - delete
   - get
-  - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - apps
   resources:
   - controllerrevisions
+  - deployments
+  - statefulsets
   verbs:
   - create
   - delete
@@ -112,10 +68,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ""
+  - monitoring.coreos.com
   resources:
-  - persistentvolumeclaims
-  - events
+  - servicemonitors
   verbs:
   - create
   - delete
@@ -124,6 +79,59 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - slinky.slurm.net
+  resources:
+  - accountings
+  - controllers
+  - loginsets
+  - nodesets
+  - restapis
+  - tokens
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - slinky.slurm.net
+  resources:
+  - accountings/finalizers
+  - controllers/finalizers
+  - loginsets/finalizers
+  - nodesets/finalizers
+  - restapis/finalizers
+  - tokens/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - slinky.slurm.net
+  resources:
+  - accountings/status
+  - controllers/status
+  - loginsets/status
+  - nodesets/status
+  - restapis/status
+  - tokens/status
+  verbs:
+  - get
+  - patch
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

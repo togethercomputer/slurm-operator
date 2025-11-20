@@ -12,9 +12,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
 )
 
 func TestSortingActivePods(t *testing.T) {
@@ -91,21 +92,8 @@ func TestSortingActivePods(t *testing.T) {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:        "runningWithCost1",
-						Annotations: map[string]string{slinkyv1alpha1.AnnotationPodDeletionCost: "1"},
-					},
-					Spec: corev1.PodSpec{NodeName: "foo"},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-						Conditions: []corev1.PodCondition{
-							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "runningWithCost10",
-						Annotations: map[string]string{slinkyv1alpha1.AnnotationPodDeletionCost: "10"},
+						Name:        "runningWithCost",
+						Annotations: map[string]string{slinkyv1beta1.AnnotationPodDeletionCost: "1"},
 					},
 					Spec: corev1.PodSpec{NodeName: "foo"},
 					Status: corev1.PodStatus{
@@ -118,7 +106,7 @@ func TestSortingActivePods(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "runningWithCordon",
-						Annotations: map[string]string{slinkyv1alpha1.AnnotationPodCordon: "True"},
+						Annotations: map[string]string{slinkyv1beta1.AnnotationPodCordon: "True"},
 					},
 					Spec: corev1.PodSpec{NodeName: "foo"},
 					Status: corev1.PodStatus{
@@ -138,6 +126,19 @@ func TestSortingActivePods(t *testing.T) {
 						},
 					},
 				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "runningWithDeadline",
+						Annotations: map[string]string{slinkyv1beta1.AnnotationPodDeadline: time.Now().Format(time.RFC3339)},
+					},
+					Spec: corev1.PodSpec{NodeName: "foo"},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
 			},
 			wantOrder: []string{
 				"unscheduled",
@@ -150,8 +151,119 @@ func TestSortingActivePods(t *testing.T) {
 				"runningWithLastTransitionTime",
 				"runningLongerTime",
 				"oldest",
-				"runningWithCost1",
-				"runningWithCost10",
+				"runningWithDeadline",
+				"runningWithCost",
+			},
+		},
+		{
+			name: "Sort ordinals",
+			pods: []corev1.Pod{
+				newRunningPod("ordinal-0", nil),
+				newRunningPod("ordinal-1", nil),
+				newRunningPod("ordinal-2", nil),
+			},
+			wantOrder: []string{
+				"ordinal-2",
+				"ordinal-1",
+				"ordinal-0",
+			},
+		},
+		{
+			name: "Sort cordon",
+			pods: []corev1.Pod{
+				newRunningPod("regular", nil),
+				newRunningPod("podCordon", map[string]string{
+					slinkyv1beta1.AnnotationPodCordon: "True",
+				}),
+			},
+			wantOrder: []string{
+				"podCordon",
+				"regular",
+			},
+		},
+		{
+			name: "Sort deadlines",
+			pods: []corev1.Pod{
+				newRunningPod("noDeadline", nil),
+				newRunningPod("deadlineBefore", map[string]string{
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Add(-time.Hour).Format(time.RFC3339),
+				}),
+				newRunningPod("deadlineNow", map[string]string{
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Format(time.RFC3339),
+				}),
+				newRunningPod("deadlineLater", map[string]string{
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Add(time.Hour).Format(time.RFC3339),
+				}),
+			},
+			wantOrder: []string{
+				"noDeadline",
+				"deadlineBefore",
+				"deadlineNow",
+				"deadlineLater",
+			},
+		},
+		{
+			name: "Sort deletion cost",
+			pods: []corev1.Pod{
+				newRunningPod("costNeg10", map[string]string{
+					slinkyv1beta1.AnnotationPodDeletionCost: "-10",
+				}),
+				newRunningPod("cost0", nil),
+				newRunningPod("costPos10", map[string]string{
+					slinkyv1beta1.AnnotationPodDeletionCost: "10",
+				}),
+			},
+			wantOrder: []string{
+				"costNeg10",
+				"cost0",
+				"costPos10",
+			},
+		},
+		{
+			name: "Sort mixed",
+			pods: []corev1.Pod{
+				newRunningPod("ordinal-0", nil),
+				newRunningPod("ordinal-1", nil),
+				newRunningPod("deadlineNow", map[string]string{
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Format(time.RFC3339),
+				}),
+				newRunningPod("deadlineLater", map[string]string{
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Add(time.Hour).Format(time.RFC3339),
+				}),
+				newRunningPod("podCordoned", map[string]string{
+					slinkyv1beta1.AnnotationPodCordon: "True",
+				}),
+				newRunningPod("podCordonedAndDeadlineNow", map[string]string{
+					slinkyv1beta1.AnnotationPodCordon:   "True",
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Format(time.RFC3339),
+				}),
+				newRunningPod("podCordonedAndDeadlineLater", map[string]string{
+					slinkyv1beta1.AnnotationPodCordon:   "True",
+					slinkyv1beta1.AnnotationPodDeadline: time.Now().Add(time.Hour).Format(time.RFC3339),
+				}),
+				newRunningPod("deletionCostNeg10", map[string]string{
+					slinkyv1beta1.AnnotationPodDeletionCost: "-10",
+				}),
+				newRunningPod("deletionCostPos10", map[string]string{
+					slinkyv1beta1.AnnotationPodDeletionCost: "1",
+				}),
+				newRunningPod("cordonedDeadlineCost100", map[string]string{
+					slinkyv1beta1.AnnotationPodCordon:       "True",
+					slinkyv1beta1.AnnotationPodDeadline:     time.Now().Format(time.RFC3339),
+					slinkyv1beta1.AnnotationPodDeletionCost: "100",
+				}),
+			},
+			wantOrder: []string{
+				"deletionCostNeg10",
+				"podCordoned",
+				"ordinal-1",
+				"ordinal-0",
+				"podCordonedAndDeadlineNow",
+				"deadlineNow",
+				"podCordonedAndDeadlineLater",
+				"deadlineLater",
+				"deletionCostPos10",
+				"cordonedDeadlineCost100",
 			},
 		},
 	}
@@ -160,10 +272,10 @@ func TestSortingActivePods(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			numPods := len(test.pods)
 
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				idx := rand.Perm(numPods)
 				randomizedPods := make([]*corev1.Pod, numPods)
-				for j := 0; j < numPods; j++ {
+				for j := range numPods {
 					randomizedPods[j] = &test.pods[idx[j]]
 				}
 
@@ -178,6 +290,22 @@ func TestSortingActivePods(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func newRunningPod(name string, annotations map[string]string) corev1.Pod {
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: annotations,
+		},
+		Spec: corev1.PodSpec{NodeName: "foo"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
 	}
 }
 
@@ -308,6 +436,75 @@ func TestSplitActivePods(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.wantPods2Names, gotPods2Names); diff != "" {
 				t.Errorf("Sorted active pod names (-want,+got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSplitUnhealthyPods(t *testing.T) {
+	type args struct {
+		pods []*corev1.Pod
+	}
+	tests := []struct {
+		name              string
+		args              args
+		wantUnhealthyPods []*corev1.Pod
+		wantHealthyPods   []*corev1.Pod
+	}{
+		{
+			name: "empty",
+			args: args{
+				pods: nil,
+			},
+			wantUnhealthyPods: []*corev1.Pod{},
+			wantHealthyPods:   []*corev1.Pod{},
+		},
+		{
+			name: "mixed",
+			args: args{
+				pods: []*corev1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "pod1"},
+						Status:     corev1.PodStatus{Phase: corev1.PodPending},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "pod2"},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+							Conditions: []corev1.PodCondition{
+								{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+							},
+						},
+					},
+				},
+			},
+			wantUnhealthyPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod1"},
+					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				},
+			},
+			wantHealthyPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod2"},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotUnhealthyPods, gotHealthyPods := SplitUnhealthyPods(tt.args.pods)
+			if !apiequality.Semantic.DeepEqual(gotUnhealthyPods, tt.wantUnhealthyPods) {
+				t.Errorf("SplitUnhealthyPods() gotUnhealthyPods = %v, want %v", gotUnhealthyPods, tt.wantUnhealthyPods)
+			}
+			if !apiequality.Semantic.DeepEqual(gotHealthyPods, tt.wantHealthyPods) {
+				t.Errorf("SplitUnhealthyPods() gotHealthyPods = %v, want %v", gotHealthyPods, tt.wantHealthyPods)
 			}
 		})
 	}

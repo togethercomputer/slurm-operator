@@ -22,8 +22,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	slinkyv1alpha1 "github.com/SlinkyProject/slurm-operator/api/v1alpha1"
-	//+kubebuilder:scaffold:imports
+	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
+	slinkywebhook "github.com/SlinkyProject/slurm-operator/internal/webhook"
+	// +kubebuilder:scaffold:imports
 )
 
 var (
@@ -34,14 +35,15 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(slinkyv1alpha1.AddToScheme(scheme))
-	//+kubebuilder:scaffold:scheme
+	utilruntime.Must(slinkyv1beta1.AddToScheme(scheme))
+	// +kubebuilder:scaffold:scheme
 }
 
 // Input flags to the command
 type Flags struct {
 	enableLeaderElection bool
 	probeAddr            string
+	metricsAddr          string
 	secureMetrics        bool
 	enableHTTP2          bool
 }
@@ -49,9 +51,15 @@ type Flags struct {
 func parseFlags(flags *Flags) {
 	flag.StringVar(
 		&flags.probeAddr,
-		"health-probe-bind-address",
+		"health-addr",
 		":8081",
 		"The address the probe endpoint binds to.",
+	)
+	flag.StringVar(
+		&flags.metricsAddr,
+		"metrics-addr",
+		"0",
+		"The address the metrics server binds to.",
 	)
 	flag.BoolVar(
 		&flags.enableLeaderElection,
@@ -69,9 +77,7 @@ func parseFlags(flags *Flags) {
 
 func main() {
 	var flags Flags
-	opts := zap.Options{
-		Development: true,
-	}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	parseFlags(&flags)
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -95,7 +101,7 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: server.Options{
-			BindAddress: "0",
+			BindAddress: flags.metricsAddr,
 			TLSOpts:     tlsOpts,
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
@@ -119,15 +125,33 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
-	if err := (&slinkyv1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "Cluster")
+	if err := (&slinkywebhook.ControllerWebhook{
+		Client: mgr.GetClient(),
+	}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Controller")
 		os.Exit(1)
 	}
-	if err := (&slinkyv1alpha1.NodeSet{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&slinkywebhook.RestapiWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Restapi")
+		os.Exit(1)
+	}
+	if err := (&slinkywebhook.AccountingSetWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Accounting")
+		os.Exit(1)
+	}
+	if err := (&slinkywebhook.NodeSetWebhook{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "NodeSet")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
+	if err = (&slinkywebhook.LoginSetWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "LoginSet")
+		os.Exit(1)
+	}
+	if err = (&slinkywebhook.TokenWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Token")
+		os.Exit(1)
+	}
+	// +kubebuilder:scaffold:builder
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running controller")

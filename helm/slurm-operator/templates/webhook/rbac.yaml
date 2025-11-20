@@ -24,12 +24,24 @@ rules:
 - apiGroups:
   - {{ include "slurm-operator.apiGroup" . }}
   resources:
-  - clusters
+  - accountings
+  - controllers
+  - loginsets
   - nodesets
+  - restapis
+  - tokens
   verbs:
   - create
   - delete
   - update
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -1,7 +1,29 @@
 ---
 apiVersion: v2
-appVersion: "24.11"
-description: Helm Chart for Slurm HPC Workload Manager Operator
+kubeVersion: ">= 1.29.0-0"
+
 name: slurm-operator
+description: Slurm Operator
 type: application
-version: 0.2.0
+appVersion: "25.11"
+version: 1.0.0
+
+annotations:
+  license: Apache-2.0
+
+home: https://slinky.schedmd.com/
+icon: https://github.com/SlinkyProject/docs/blob/main/docs/_static/images/slinky.svg
+
+sources:
+  - https://github.com/SlinkyProject/slurm-operator
+
+maintainers:
+  - name: SchedMD LLC.
+    email: slinky@schedmd.com
+    url: https://support.schedmd.com/
+
+dependencies:
+  - name: slurm-operator-crds
+    version: 1.0.0
+    condition: crds.enabled
+    repository: file://../slurm-operator-crds
