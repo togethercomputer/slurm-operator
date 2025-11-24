@@ -15,10 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	slinkyv1beta1 "github.com/SlinkyProject/slurm-operator/api/v1beta1"
-	"github.com/SlinkyProject/slurm-operator/internal/builder/labels"
-	"github.com/SlinkyProject/slurm-operator/internal/builder/metadata"
-	slurmtaints "github.com/SlinkyProject/slurm-operator/pkg/taints"
+	slinkyv1beta1 "github.com/togethercomputer/slurm-operator/api/v1beta1"
+	"github.com/togethercomputer/slurm-operator/internal/builder/labels"
+	"github.com/togethercomputer/slurm-operator/internal/builder/metadata"
+	slurmtaints "github.com/togethercomputer/slurm-operator/pkg/taints"
 )
 
 const (
