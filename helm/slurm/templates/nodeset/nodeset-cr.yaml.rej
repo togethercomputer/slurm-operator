@@ -1,0 +1,71 @@
+@@ -13,6 +13,50 @@
+ {{- $priorityClassName := $podSpec.priorityClassName | default $.Values.priorityClassName -}}
+ {{- $_ := set $podSpec "priorityClassName" $priorityClassName -}}
+ {{- $_ := set $podSpec "hostname" (printf "%s-" $key) -}}
++{{- /* Add shared memory volume and mount if shmSize is specified (Together addition) */}}
++{{- if $podSpec.shmSize }}
++  {{- $volumes := $podSpec.volumes | default list -}}
++  {{- $shmVolume := dict "name" "dshm" "emptyDir" (dict "medium" "Memory" "sizeLimit" $podSpec.shmSize) -}}
++  {{- $volumes = append $volumes $shmVolume -}}
++  {{- $_ := set $podSpec "volumes" $volumes -}}
++  {{- $volumeMounts := $nodeset.slurmd.volumeMounts | default list -}}
++  {{- $shmVolumeMount := dict "name" "dshm" "mountPath" "/dev/shm" -}}
++  {{- $volumeMounts = append $volumeMounts $shmVolumeMount -}}
++  {{- $_ := set $nodeset.slurmd "volumeMounts" $volumeMounts -}}
++{{- end }}
++{{- /* Add existing data claim volumes and mounts (Together addition) */}}
++{{- if and $nodeset.persistence $nodeset.persistence.existingDataClaims }}
++  {{- $volumes := $podSpec.volumes | default list -}}
++  {{- $volumeMounts := $nodeset.slurmd.volumeMounts | default list -}}
++  {{- range $nodeset.persistence.existingDataClaims }}
++    {{- $pvcVolume := dict "name" .name "persistentVolumeClaim" (dict "claimName" .name) -}}
++    {{- $volumes = append $volumes $pvcVolume -}}
++    {{- $pvcVolumeMount := dict "name" .name "mountPath" .mountPath -}}
++    {{- $volumeMounts = append $volumeMounts $pvcVolumeMount -}}
++  {{- end }}
++  {{- $_ := set $podSpec "volumes" $volumes -}}
++  {{- $_ := set $nodeset.slurmd "volumeMounts" $volumeMounts -}}
++{{- end }}
++{{- /* Add volumeClaimTemplate mounts to slurmd (Together addition) */}}
++{{- if and $nodeset.persistence $nodeset.persistence.volumeClaimTemplate }}
++  {{- $volumeMounts := $nodeset.slurmd.volumeMounts | default list -}}
++  {{- range $nodeset.persistence.volumeClaimTemplate }}
++    {{- $vctVolumeMount := dict "name" .metadata.name "mountPath" .spec.mountPath -}}
++    {{- $volumeMounts = append $volumeMounts $vctVolumeMount -}}
++  {{- end }}
++  {{- $_ := set $nodeset.slurmd "volumeMounts" $volumeMounts -}}
++{{- end }}
++{{- /* Add init script volume and mount for compute nodes (Together addition) */}}
++{{- if $.Values.initScriptNodes }}
++  {{- $volumes := $podSpec.volumes | default list -}}
++  {{- $initScriptVolume := dict "name" "init-script" "configMap" (dict "name" (include "slurm.initScriptNodesName" $) "defaultMode" 0755) -}}
++  {{- $volumes = append $volumes $initScriptVolume -}}
++  {{- $_ := set $podSpec "volumes" $volumes -}}
++  {{- $volumeMounts := $nodeset.slurmd.volumeMounts | default list -}}
++  {{- $initScriptVolumeMount := dict "name" "init-script" "mountPath" "/root/init.sh" "subPath" "init.sh" -}}
++  {{- $volumeMounts = append $volumeMounts $initScriptVolumeMount -}}
++  {{- $_ := set $nodeset.slurmd "volumeMounts" $volumeMounts -}}
++{{- end }}
+ {{- $podTemplate := dict "metadata" $podMetadata "spec" $podSpec -}}
+ {{- if $nodeset.useResourceLimits }}
+   {{- $envLimts := list (dict "name" "POD_CPUS" "value" (include "slurm.worker.podCpus" $nodeset.slurmd | toString)) (dict "name" "POD_MEMORY" "value" (include "slurm.worker.podMemory" $nodeset.slurmd | toString)) -}}
+@@ -63,6 +107,19 @@
+   updateStrategy:
+     {{- toYaml . | nindent 4 }}
+   {{- end }}{{- /* with $nodeset.updateStrategy */}}
++  {{- if and $nodeset.persistence $nodeset.persistence.volumeClaimTemplate }}
++  volumeClaimTemplates:
++    {{- range $nodeset.persistence.volumeClaimTemplate }}
++    - metadata:
++        name: {{ .metadata.name }}
++      spec:
++        accessModes: {{ .spec.accessModes | toYaml | nindent 10 }}
++        resources:
++          {{- toYaml .spec.resources | nindent 10 }}
++        storageClassName: {{ .spec.storageClassName }}
++        volumeMode: {{ .spec.volumeMode }}
++    {{- end }}
++  {{- end }}
+   taintKubeNodes: {{ $nodeset.taintKubeNodes }}
+ {{- end }}{{- /* $nodeset.enabled */}}
+ {{- end }}{{- /* range $nodeset := $.Values.nodesets */}}

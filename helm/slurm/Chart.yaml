@@ -17,7 +17,7 @@ icon: https://raw.githubusercontent.com/SlinkyProject/docs/refs/heads/main/docs/
 sources:
   - https://github.com/SchedMD/slurm
   - https://github.com/SlinkyProject/containers
-  - https://github.com/SlinkyProject/slurm-operator
+  - https://github.com/togethercomputer/slurm-operator
 
 maintainers:
   - name: SchedMD LLC.
