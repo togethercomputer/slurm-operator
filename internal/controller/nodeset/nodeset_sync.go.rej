@@ -1,0 +1,40 @@
+@@ -678,13 +693,22 @@
+ 				return err
+ 			}
+ 		}
+-		if isDrained, err := r.slurmControl.IsNodeDrained(ctx, nodeset, pod); !isDrained || err != nil {
++		isDrained, err := r.slurmControl.IsNodeDrained(ctx, nodeset, pod)
++		if err != nil {
++			r.expectations.DeletionObserved(logger, key, podKey)
++			return err
++		}
++
++		// Update K8s node annotation to reflect drain state
++		if err := r.updateNodeCordonAnnotation(ctx, nodeset, pod, isDrained); err != nil {
++			logger.Error(err, "Failed to update node cordon annotation", "pod", klog.KObj(pod))
++			// Don't fail the reconciliation, just log the error
++		}
++
++		if !isDrained {
+ 			// Decrement expectations and requeue reconcile because the Slurm node is not drained yet.
+ 			// We must wait until fully drained to terminate the pod.
+ 			r.expectations.DeletionObserved(logger, key, podKey)
+-			if err != nil {
+-				return err
+-			}
+ 		}
+ 		return nil
+ 	})
+@@ -728,6 +752,12 @@
+ 		return err
+ 	}
+ 
++	// Update K8s node annotation to reflect drain state
++	if err := r.updateNodeCordonAnnotation(ctx, nodeset, pod, isDrained); err != nil {
++		logger.Error(err, "Failed to update node cordon annotation", "pod", klog.KObj(pod))
++		// Don't fail the reconciliation, just log the error
++	}
++
+ 	if podutils.IsRunning(pod) && !isDrained {
+ 		logger.V(2).Info("NodeSet Pod is draining, pending termination for scale-in",
+ 			"pod", klog.KObj(pod))

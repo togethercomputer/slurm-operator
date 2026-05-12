@@ -62,7 +62,7 @@ version-match: version ## Check if versions are consistent.
 .PHONY: all
 all: build ## Build slurm-operator.
 
-REGISTRY ?= togethercomputer
+REGISTRY ?= slinky.slurm.net
 BUILDER ?= project-v3-builder
 BAKE_METADATA_FILE ?= bake-metadata.json
 

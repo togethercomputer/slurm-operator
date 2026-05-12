@@ -87,9 +87,6 @@ func parseFlags(flags *Flags) {
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&flags.enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&flags.namespace, "namespace", "",
-		"If set, the operator only watches Slinky resources in this namespace. "+
-			"Empty (the default) watches all namespaces.")
 	flag.Parse()
 }
 
@@ -119,9 +116,7 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	leaderElectionID := "0033bda7.slinky.slurm.net"
-
-	mgrOpts := ctrl.Options{
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: server.Options{
 			TLSOpts:     tlsOpts,
