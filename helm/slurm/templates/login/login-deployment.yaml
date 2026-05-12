@@ -1,0 +1,163 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (C) SchedMD LLC.
+SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.login.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "slurm.login.name" . }}
+  namespace: {{ include "slurm.namespace" . }}
+  labels:
+    {{- include "slurm.login.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.login.replicas }}
+  selector:
+    matchLabels:
+      {{- include "slurm.login.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "slurm.login.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.login.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      dnsConfig:
+        {{- include "slurm.dnsConfig" . | nindent 8 }}
+      {{- with .Values.login.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.login.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.login.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "slurm.login.selectorLabels" . | nindent 12 }}
+      initContainers:
+      - name: fix-perms
+        image: "{{ .Values.login.image.repository }}:{{ .Values.login.image.tag }}"
+        command: ["sh", "-c", "set -e && cp /mnt/slurm/* /etc/slurm/ && chmod 644 /etc/slurm/*.conf && chmod 600 /etc/slurm/*.key && chown -R root:root /etc/slurm/"]
+        volumeMounts:
+        - name: slurm-config-projected
+          mountPath: /mnt/slurm
+          readOnly: true
+        - name: slurm-config
+          mountPath: /etc/slurm
+      containers:
+      - name: login
+        image: "{{ .Values.login.image.repository }}:{{ .Values.login.image.tag }}"
+        imagePullPolicy: {{ .Values.login.imagePullPolicy | default .Values.imagePullPolicy }}
+        {{- with .Values.login.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.login.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        - name: SLURM_CLUSTER_NAME
+          value: {{ include "slurm.fullname" . }}
+        - name: SLURM_CONF_SERVER  # TCL-4403: must use -controller service name
+          value: {{ include "slurm.fullname" . }}-controller.{{ include "slurm.namespace" . }}.svc.cluster.local
+        - name: SACKD_OPTIONS
+          value: "--conf-server {{ include "slurm.fullname" . }}-controller.{{ include "slurm.namespace" . }}:6817"
+        volumeMounts:
+        - name: slurm-config
+          mountPath: /etc/slurm
+        {{- if .Values.login.sharedMemorySize }}
+        - name: dshm
+          mountPath: /dev/shm
+        {{- end }}
+        {{- if .Values.initScriptLogin }}
+        - name: init-script
+          mountPath: /root/init.sh
+          subPath: init.sh
+        {{- end }}
+        {{- range .Values.login.extraVolumeMounts }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath }}
+          {{- if .subPath }}
+          subPath: {{ .subPath }}
+          {{- end }}
+          {{- if .readOnly }}
+          readOnly: {{ .readOnly }}
+          {{- end }}
+        {{- end }}
+      volumes:
+      - name: slurm-config
+        emptyDir: {}
+      - name: slurm-config-projected  # TCL-4402: projected volume, copied by initContainer with split permissions
+        projected:
+          defaultMode: 0600
+          sources:
+          - configMap:
+              name: {{ include "slurm.fullname" . }}-config
+          - secret:
+              name: {{ include "slurm.fullname" . }}-auth-slurm
+          - secret:
+              name: {{ include "slurm.fullname" . }}-auth-jwths256
+      {{- if .Values.login.sharedMemorySize }}
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ .Values.login.sharedMemorySize }}
+      {{- end }}
+      {{- if .Values.initScriptLogin }}
+      - name: init-script
+        configMap:
+          name: {{ include "slurm.initScriptLoginName" . }}
+          defaultMode: 0755
+      {{- end }}
+      {{- range .Values.login.extraVolumes }}
+      - name: {{ .name }}
+        {{- if .configMap }}
+        configMap:
+          name: {{ .configMap.name }}
+          {{- with .configMap.items }}
+          items:
+            {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- else if .secret }}
+        secret:
+          secretName: {{ .secret.secretName }}
+          {{- with .secret.items }}
+          items:
+            {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- else if .persistentVolumeClaim }}
+        persistentVolumeClaim:
+          claimName: {{ .persistentVolumeClaim.claimName }}
+        {{- else if .nfs }}
+        nfs:
+          server: {{ .nfs.server }}
+          path: {{ .nfs.path }}
+        {{- else if .emptyDir }}
+        emptyDir: {}
+        {{- else if .hostPath }}
+        hostPath:
+          path: {{ .hostPath.path }}
+          {{- if .hostPath.type }}
+          type: {{ .hostPath.type }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+{{- end }}
