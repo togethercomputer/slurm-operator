@@ -136,6 +136,15 @@ initScriptNodes: null
   #   set -euo pipefail
   #   echo "Compute node init"
 
+# -- (string) Init script mounted to /root/init.sh on the controller (slurmctld).
+# WARNING: The script must include a shebang (!) so it can be executed correctly.
+# Ref: https://en.wikipedia.org/wiki/Shebang_(Unix)
+initScriptController: null
+  # |
+  #   #!/usr/bin/env bash
+  #   set -euo pipefail
+  #   echo "Controller init"
+
 # Slurm controller (slurmctld) configuration.
 controller:
   # -- Configures this component as external (not in Kubernetes).

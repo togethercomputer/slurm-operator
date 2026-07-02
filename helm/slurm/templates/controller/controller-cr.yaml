@@ -9,6 +9,17 @@ SPDX-License-Identifier: Apache-2.0
 {{- $_ := set $podSpec "imagePullSecrets" $imagePullSecrets -}}
 {{- $priorityClassName := $podSpec.priorityClassName | default .Values.priorityClassName -}}
 {{- $_ := set $podSpec "priorityClassName" $priorityClassName -}}
+{{- /* Add init script volume and mount for the controller (Together addition) */}}
+{{- if .Values.initScriptController }}
+  {{- $volumes := $podSpec.volumes | default list -}}
+  {{- $initScriptVolume := dict "name" "init-script" "configMap" (dict "name" (include "slurm.initScriptControllerName" .) "defaultMode" 0755) -}}
+  {{- $volumes = append $volumes $initScriptVolume -}}
+  {{- $_ := set $podSpec "volumes" $volumes -}}
+  {{- $volumeMounts := .Values.controller.slurmctld.volumeMounts | default list -}}
+  {{- $initScriptVolumeMount := dict "name" "init-script" "mountPath" "/root/init.sh" "subPath" "init.sh" -}}
+  {{- $volumeMounts = append $volumeMounts $initScriptVolumeMount -}}
+  {{- $_ := set .Values.controller.slurmctld "volumeMounts" $volumeMounts -}}
+{{- end }}
 {{- $podTemplate := dict "metadata" $podMetadata "spec" $podSpec -}}
 apiVersion: slinky.slurm.net/v1beta1
 kind: Controller
