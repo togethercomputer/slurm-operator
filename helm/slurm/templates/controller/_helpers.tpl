@@ -119,3 +119,10 @@ Init script for compute nodes.
 {{- define "slurm.initScriptNodesName" -}}
 {{- printf "%s-init-script-nodes" (include "slurm.fullname" .) -}}
 {{- end }}
+
+{{/*
+Init script for the controller.
+*/}}
+{{- define "slurm.initScriptControllerName" -}}
+{{- printf "%s-init-script-controller" (include "slurm.fullname" .) -}}
+{{- end }}
