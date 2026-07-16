@@ -183,6 +183,73 @@ func TestBuilder_BuildControllerConfig(t *testing.T) {
 	}
 }
 
+func TestBuildSlurmConfUsesAccountingEndpoint(t *testing.T) {
+	t.Parallel()
+
+	controller := &slinkyv1beta1.Controller{
+		ObjectMeta: metav1.ObjectMeta{Name: "slurm", Namespace: "slurm"},
+	}
+	tests := []struct {
+		name       string
+		accounting *slinkyv1beta1.Accounting
+		wantHost   string
+		wantPort   string
+	}{
+		{
+			name: "internal service",
+			accounting: &slinkyv1beta1.Accounting{
+				ObjectMeta: metav1.ObjectMeta{Name: "slurm", Namespace: "slurm"},
+			},
+			wantHost: "slurm-accounting",
+			wantPort: "6819",
+		},
+		{
+			name: "external endpoint",
+			accounting: &slinkyv1beta1.Accounting{
+				ObjectMeta: metav1.ObjectMeta{Name: "slurm", Namespace: "slurm"},
+				Spec: slinkyv1beta1.AccountingSpec{
+					External: true,
+					ExternalConfig: slinkyv1beta1.ExternalConfig{
+						Host: "10.97.56.23",
+						Port: 16819,
+					},
+				},
+			},
+			wantHost: "10.97.56.23",
+			wantPort: "16819",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			configs := []string{
+				buildSlurmConf(
+					controller,
+					tt.accounting,
+					&slinkyv1beta1.NodeSetList{},
+					nil,
+					nil,
+					nil,
+					nil,
+					false,
+					false,
+				),
+				buildSlurmConfMinimal(controller, tt.accounting),
+			}
+			for _, config := range configs {
+				if !strings.Contains(config, "AccountingStorageHost="+tt.wantHost) {
+					t.Errorf("slurm.conf missing accounting host %q", tt.wantHost)
+				}
+				if !strings.Contains(config, "AccountingStoragePort="+tt.wantPort) {
+					t.Errorf("slurm.conf missing accounting port %q", tt.wantPort)
+				}
+			}
+		})
+	}
+}
+
 func Test_isCgroupEnabled(t *testing.T) {
 	type args struct {
 		cgroupConf string
