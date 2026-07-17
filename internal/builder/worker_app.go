@@ -227,7 +227,7 @@ func slurmdConfArgs(nodeset *slinkyv1beta1.NodeSet) []string {
 
 	args := []string{
 		"--conf",
-		fmt.Sprintf("'%s'", strings.Join(confList, " ")),
+		strings.Join(confList, " "),
 	}
 
 	return args
