@@ -76,6 +76,27 @@ func TestBuilder_BuildContainer(t *testing.T) {
 			},
 		},
 		{
+			name:   "override default TCP port with explicit TCP",
+			client: fake.NewFakeClient(),
+			opts: ContainerOpts{
+				base: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "default-tcp", ContainerPort: 6818},
+					},
+				},
+				merge: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "explicit-tcp", ContainerPort: 6818, Protocol: corev1.ProtocolTCP},
+					},
+				},
+			},
+			want: corev1.Container{
+				Ports: []corev1.ContainerPort{
+					{Name: "explicit-tcp", ContainerPort: 6818, Protocol: corev1.ProtocolTCP},
+				},
+			},
+		},
+		{
 			name:   "keep ports with the same number and different protocols",
 			client: fake.NewFakeClient(),
 			opts: ContainerOpts{
