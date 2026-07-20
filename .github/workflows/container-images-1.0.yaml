@@ -29,7 +29,7 @@ env:
   RELEASE_BRANCH: slurm-1.0-together-changes
 
 concurrency:
-  group: container-images-1.0-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: container-images-1.0-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
