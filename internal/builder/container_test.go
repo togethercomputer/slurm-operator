@@ -75,6 +75,28 @@ func TestBuilder_BuildContainer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "keep ports with the same number and different protocols",
+			client: fake.NewFakeClient(),
+			opts: ContainerOpts{
+				base: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "tcp", ContainerPort: 6818},
+					},
+				},
+				merge: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "udp", ContainerPort: 6818, Protocol: corev1.ProtocolUDP},
+					},
+				},
+			},
+			want: corev1.Container{
+				Ports: []corev1.ContainerPort{
+					{Name: "tcp", ContainerPort: 6818},
+					{Name: "udp", ContainerPort: 6818, Protocol: corev1.ProtocolUDP},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

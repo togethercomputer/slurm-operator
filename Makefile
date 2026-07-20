@@ -215,7 +215,11 @@ install-dev: ## Install binaries for development environment.
 	go install sigs.k8s.io/cloud-provider-kind@latest
 
 .PHONY: helm-validate
-helm-validate: helm-dependency-update helm-lint ## Validate Helm charts.
+helm-validate: helm-dependency-update helm-lint helm-test ## Validate Helm charts.
+
+.PHONY: helm-test
+helm-test: ## Run Helm chart regression tests.
+	bash hack/test-external-login.sh
 
 .PHONY: helm-docs
 helm-docs: helm-docs-bin ## Run helm-docs.

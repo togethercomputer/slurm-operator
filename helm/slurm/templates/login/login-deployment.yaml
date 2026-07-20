@@ -8,11 +8,13 @@ SPDX-License-Identifier: Apache-2.0
 {{- $controllerSackdHost := printf "%s-controller.%s" (include "slurm.fullname" .) (include "slurm.namespace" .) }}
 {{- $controllerPort := 6817 }}
 {{- $slurmKeySecretName := printf "%s-auth-slurm" (include "slurm.fullname" .) }}
+{{- $slurmKeySecretKey := "slurm.key" }}
 {{- if .Values.controller.external }}
 {{- $controllerHost = required "controller.externalConfig.host is required when controller.external is true" .Values.controller.externalConfig.host }}
 {{- $controllerSackdHost = $controllerHost }}
 {{- $controllerPort = required "controller.externalConfig.port is required when controller.external is true" .Values.controller.externalConfig.port }}
 {{- $slurmKeySecretName = required "slurmKeyRef.name is required when controller.external is true" .Values.slurmKeyRef.name }}
+{{- $slurmKeySecretKey = required "slurmKeyRef.key is required when controller.external is true" .Values.slurmKeyRef.key }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -119,6 +121,9 @@ spec:
           sources:
           - secret:
               name: {{ $slurmKeySecretName | quote }}
+              items:
+              - key: {{ $slurmKeySecretKey | quote }}
+                path: slurm.key
       {{- if .Values.login.sharedMemorySize }}
       - name: dshm
         emptyDir:

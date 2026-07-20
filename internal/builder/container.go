@@ -51,7 +51,8 @@ func mergeContainerPorts(base, overrides []corev1.ContainerPort) []corev1.Contai
 	ports := slices.Clone(base)
 	for _, override := range overrides {
 		index := slices.IndexFunc(ports, func(port corev1.ContainerPort) bool {
-			return port.ContainerPort == override.ContainerPort
+			return port.ContainerPort == override.ContainerPort &&
+				containerPortProtocol(port.Protocol) == containerPortProtocol(override.Protocol)
 		})
 		if index == -1 {
 			ports = append(ports, override)
@@ -61,4 +62,12 @@ func mergeContainerPorts(base, overrides []corev1.ContainerPort) []corev1.Contai
 	}
 
 	return ports
+}
+
+func containerPortProtocol(protocol corev1.Protocol) corev1.Protocol {
+	if protocol == "" {
+		return corev1.ProtocolTCP
+	}
+
+	return protocol
 }
