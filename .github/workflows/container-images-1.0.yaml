@@ -29,8 +29,8 @@ env:
   RELEASE_BRANCH: slurm-1.0-together-changes
 
 concurrency:
-  group: container-images-1.0-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: container-images-1.0-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-push:
@@ -90,11 +90,39 @@ jobs:
         with:
           version: v3.16.3
 
+      - name: Run tests
+        run: make helm-validate test
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Refuse to overwrite stable image tags
+        if: steps.should-push.outputs.push == 'true' && github.event_name != 'pull_request'
+        env:
+          IMAGE_VERSION: ${{ steps.image-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for image_name in slurm-operator slurm-operator-webhook; do
+            image_ref="${REGISTRY}/${image_name}:${IMAGE_VERSION}"
+            set +e
+            inspect_output="$(docker buildx imagetools inspect "${image_ref}" 2>&1)"
+            inspect_status=$?
+            set -e
+            if [ "${inspect_status}" -eq 0 ]; then
+              echo "::error::Refusing to overwrite published image ${image_ref}"
+              exit 1
+            fi
+            inspect_output_lower="${inspect_output,,}"
+            if [[ "${inspect_output_lower}" != *"not found"* && "${inspect_output_lower}" != *"manifest unknown"* ]]; then
+              echo "::error::Unable to verify whether ${image_ref} already exists"
+              printf '%s\n' "${inspect_output}"
+              exit 1
+            fi
+            echo "Stable image tag is available: ${image_ref}"
+          done
 
       - name: Log in to Docker Hub
         if: steps.should-push.outputs.push == 'true'
