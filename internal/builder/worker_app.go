@@ -184,7 +184,8 @@ func slurmdArgs(nodeset *slinkyv1beta1.NodeSet, controller *slinkyv1beta1.Contro
 	return args
 }
 
-func slurmdConfArgs(nodeset *slinkyv1beta1.NodeSet) []string {
+// ExtraConf is the authorized slurmd --conf escape hatch and is passed as one argv element, not through a shell.
+func slurmdConfArgs(nodeset *slinkyv1beta1.NodeSet) []string { // broly:ignore
 	extraConf := []string{}
 	if nodeset.Spec.ExtraConf != "" {
 		extraConf = strings.Split(nodeset.Spec.ExtraConf, " ")
