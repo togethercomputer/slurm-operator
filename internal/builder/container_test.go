@@ -34,6 +34,10 @@ func TestBuilder_BuildContainer(t *testing.T) {
 					Name:            "foo",
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Args:            []string{"-a", "-b"},
+					Ports: []corev1.ContainerPort{
+						{Name: "slurmd", ContainerPort: 6818},
+						{Name: "metrics", ContainerPort: 9090},
+					},
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("250m"),
@@ -45,6 +49,9 @@ func TestBuilder_BuildContainer(t *testing.T) {
 					Name:  "bar",
 					Image: "nginx",
 					Args:  []string{"-c"},
+					Ports: []corev1.ContainerPort{
+						{Name: "slurmd", ContainerPort: 6818, HostPort: 6818},
+					},
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU: resource.MustParse("100m"),
@@ -57,10 +64,57 @@ func TestBuilder_BuildContainer(t *testing.T) {
 				Image:           "nginx",
 				ImagePullPolicy: corev1.PullIfNotPresent,
 				Args:            []string{"-a", "-b", "-c"},
+				Ports: []corev1.ContainerPort{
+					{Name: "slurmd", ContainerPort: 6818, HostPort: 6818},
+					{Name: "metrics", ContainerPort: 9090},
+				},
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList{
 						corev1.ResourceCPU: resource.MustParse("100m"),
 					},
+				},
+			},
+		},
+		{
+			name:   "override default TCP port with explicit TCP",
+			client: fake.NewFakeClient(),
+			opts: ContainerOpts{
+				base: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "default-tcp", ContainerPort: 6818},
+					},
+				},
+				merge: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "explicit-tcp", ContainerPort: 6818, Protocol: corev1.ProtocolTCP},
+					},
+				},
+			},
+			want: corev1.Container{
+				Ports: []corev1.ContainerPort{
+					{Name: "explicit-tcp", ContainerPort: 6818, Protocol: corev1.ProtocolTCP},
+				},
+			},
+		},
+		{
+			name:   "keep ports with the same number and different protocols",
+			client: fake.NewFakeClient(),
+			opts: ContainerOpts{
+				base: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "tcp", ContainerPort: 6818},
+					},
+				},
+				merge: corev1.Container{
+					Ports: []corev1.ContainerPort{
+						{Name: "udp", ContainerPort: 6818, Protocol: corev1.ProtocolUDP},
+					},
+				},
+			},
+			want: corev1.Container{
+				Ports: []corev1.ContainerPort{
+					{Name: "tcp", ContainerPort: 6818},
+					{Name: "udp", ContainerPort: 6818, Protocol: corev1.ProtocolUDP},
 				},
 			},
 		},

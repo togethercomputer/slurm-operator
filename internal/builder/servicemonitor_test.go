@@ -6,8 +6,8 @@ package builder_test
 import (
 	"testing"
 
-	"github.com/togethercomputer/slurm-operator/internal/builder"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/togethercomputer/slurm-operator/internal/builder"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

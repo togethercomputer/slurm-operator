@@ -4,6 +4,8 @@
 package builder
 
 import (
+	"slices"
+
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/togethercomputer/slurm-operator/internal/utils/reflectutils"
@@ -24,7 +26,7 @@ func (b *Builder) BuildContainer(opts ContainerOpts) corev1.Container {
 	out.Args = structutils.MergeList(opts.base.Args, opts.merge.Args)
 	out.Env = structutils.MergeList(opts.base.Env, opts.merge.Env)
 	out.WorkingDir = reflectutils.UseNonZeroOrDefault(opts.merge.WorkingDir, opts.base.WorkingDir)
-	out.Ports = structutils.MergeList(opts.base.Ports, opts.merge.Ports)
+	out.Ports = mergeContainerPorts(opts.base.Ports, opts.merge.Ports)
 	out.Resources = reflectutils.UseNonZeroOrDefault(opts.merge.Resources, opts.base.Resources)
 	out.ResizePolicy = structutils.MergeList(opts.base.ResizePolicy, opts.merge.ResizePolicy)
 	out.RestartPolicy = reflectutils.UseNonZeroOrDefault(opts.merge.RestartPolicy, opts.base.RestartPolicy)
@@ -43,4 +45,29 @@ func (b *Builder) BuildContainer(opts ContainerOpts) corev1.Container {
 	out.TTY = reflectutils.UseNonZeroOrDefault(opts.merge.TTY, opts.base.TTY)
 
 	return out
+}
+
+func mergeContainerPorts(base, overrides []corev1.ContainerPort) []corev1.ContainerPort {
+	ports := slices.Clone(base)
+	for _, override := range overrides {
+		index := slices.IndexFunc(ports, func(port corev1.ContainerPort) bool {
+			return port.ContainerPort == override.ContainerPort &&
+				containerPortProtocol(port.Protocol) == containerPortProtocol(override.Protocol)
+		})
+		if index == -1 {
+			ports = append(ports, override)
+		} else {
+			ports[index] = override
+		}
+	}
+
+	return ports
+}
+
+func containerPortProtocol(protocol corev1.Protocol) corev1.Protocol {
+	if protocol == "" {
+		return corev1.ProtocolTCP
+	}
+
+	return protocol
 }

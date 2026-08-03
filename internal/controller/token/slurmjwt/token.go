@@ -8,8 +8,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/togethercomputer/slurm-operator/internal/utils/mathutils"
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/togethercomputer/slurm-operator/internal/utils/mathutils"
 	"k8s.io/apimachinery/pkg/util/uuid"
 )
 

@@ -4,6 +4,18 @@ SPDX-License-Identifier: Apache-2.0
 */}}
 
 {{- if .Values.login.enabled }}
+{{- $controllerHost := printf "%s-controller.%s.svc.cluster.local" (include "slurm.fullname" .) (include "slurm.namespace" .) }}
+{{- $controllerSackdHost := printf "%s-controller.%s" (include "slurm.fullname" .) (include "slurm.namespace" .) }}
+{{- $controllerPort := 6817 }}
+{{- $slurmKeySecretName := printf "%s-auth-slurm" (include "slurm.fullname" .) }}
+{{- $slurmKeySecretKey := "slurm.key" }}
+{{- if .Values.controller.external }}
+{{- $controllerHost = required "controller.externalConfig.host is required when controller.external is true" .Values.controller.externalConfig.host }}
+{{- $controllerSackdHost = $controllerHost }}
+{{- $controllerPort = required "controller.externalConfig.port is required when controller.external is true" .Values.controller.externalConfig.port }}
+{{- $slurmKeySecretName = required "slurmKeyRef.name is required when controller.external is true" .Values.slurmKeyRef.name }}
+{{- $slurmKeySecretKey = required "slurmKeyRef.key is required when controller.external is true" .Values.slurmKeyRef.key }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,6 +56,12 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.login.podSpec }}
+      {{- with .hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -70,10 +88,10 @@ spec:
         env:
         - name: SLURM_CLUSTER_NAME
           value: {{ include "slurm.fullname" . }}
-        - name: SLURM_CONF_SERVER  # TCL-4403: must use -controller service name
-          value: {{ include "slurm.fullname" . }}-controller.{{ include "slurm.namespace" . }}.svc.cluster.local
+        - name: SLURM_CONF_SERVER
+          value: {{ $controllerHost | quote }}
         - name: SACKD_OPTIONS
-          value: "--conf-server {{ include "slurm.fullname" . }}-controller.{{ include "slurm.namespace" . }}:6817"
+          value: {{ printf "--conf-server %s:%v" $controllerSackdHost $controllerPort | quote }}
         volumeMounts:
         - name: slurm-config
           mountPath: /etc/slurm
@@ -102,7 +120,10 @@ spec:
           defaultMode: 0600
           sources:
           - secret:
-              name: {{ include "slurm.fullname" . }}-auth-slurm
+              name: {{ $slurmKeySecretName | quote }}
+              items:
+              - key: {{ $slurmKeySecretKey | quote }}
+                path: slurm.key
       {{- if .Values.login.sharedMemorySize }}
       - name: dshm
         emptyDir:

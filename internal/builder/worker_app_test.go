@@ -5,6 +5,7 @@ package builder
 
 import (
 	_ "embed"
+	"slices"
 	"strings"
 	"testing"
 
@@ -103,5 +104,21 @@ func TestBuilder_BuildWorkerPodTemplate(t *testing.T) {
 				t.Errorf("len(DNSConfig.Searches) = %v , want = > 0", len(got.Spec.DNSConfig.Searches))
 			}
 		})
+	}
+}
+
+func TestSlurmdConfArgsArePassedWithoutShellQuotes(t *testing.T) {
+	t.Parallel()
+
+	nodeset := &slinkyv1beta1.NodeSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "slinky"},
+		Spec: slinkyv1beta1.NodeSetSpec{
+			ExtraConf: "Gres=gpu:default:8",
+		},
+	}
+	want := []string{"--conf", "Features=slinky Gres=gpu:default:8"}
+
+	if got := slurmdConfArgs(nodeset); !slices.Equal(got, want) {
+		t.Errorf("slurmdConfArgs() = %q, want %q", got, want)
 	}
 }

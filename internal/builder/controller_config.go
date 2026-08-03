@@ -205,9 +205,10 @@ func buildSlurmConf(
 	conf.AddProperty(config.NewPropertyRaw("#"))
 	conf.AddProperty(config.NewPropertyRaw("### ACCOUNTING ###"))
 	if accounting != nil {
+		accountingHost, accountingPort := accountingEndpoint(accounting)
 		conf.AddProperty(config.NewProperty("AccountingStorageType", "accounting_storage/slurmdbd"))
-		conf.AddProperty(config.NewProperty("AccountingStorageHost", accounting.ServiceKey().Name))
-		conf.AddProperty(config.NewProperty("AccountingStoragePort", SlurmdbdPort))
+		conf.AddProperty(config.NewProperty("AccountingStorageHost", accountingHost))
+		conf.AddProperty(config.NewProperty("AccountingStoragePort", accountingPort))
 		conf.AddProperty(config.NewProperty("AccountingStorageTRES", "gres/gpu"))
 		if cgroupEnabled {
 			conf.AddProperty(config.NewProperty("JobAcctGatherType", "jobacct_gather/cgroup"))
@@ -350,12 +351,21 @@ func buildSlurmConfMinimal(
 	conf.AddProperty(config.NewPropertyRaw("#"))
 	conf.AddProperty(config.NewPropertyRaw("### ACCOUNTING ###"))
 	if accounting != nil {
+		accountingHost, accountingPort := accountingEndpoint(accounting)
 		conf.AddProperty(config.NewProperty("AccountingStorageType", "accounting_storage/slurmdbd"))
-		conf.AddProperty(config.NewProperty("AccountingStorageHost", accounting.ServiceKey().Name))
-		conf.AddProperty(config.NewProperty("AccountingStoragePort", SlurmdbdPort))
+		conf.AddProperty(config.NewProperty("AccountingStorageHost", accountingHost))
+		conf.AddProperty(config.NewProperty("AccountingStoragePort", accountingPort))
 	} else {
 		conf.AddProperty(config.NewProperty("AccountingStorageType", "accounting_storage/none"))
 	}
 
 	return conf.Build()
+}
+
+func accountingEndpoint(accounting *slinkyv1beta1.Accounting) (string, int) {
+	if accounting.Spec.External {
+		return accounting.Spec.ExternalConfig.Host, accounting.Spec.ExternalConfig.Port
+	}
+
+	return accounting.ServiceKey().Name, SlurmdbdPort
 }

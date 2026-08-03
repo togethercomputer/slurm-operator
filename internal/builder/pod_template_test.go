@@ -73,6 +73,30 @@ func TestBuilder_buildPodTemplate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "host aliases",
+			fields: fields{
+				client: fake.NewFakeClient(),
+			},
+			args: args{
+				opts: PodTemplateOpts{
+					merge: corev1.PodSpec{
+						HostAliases: []corev1.HostAlias{{
+							IP:        "10.43.165.210",
+							Hostnames: []string{"slurm-controller.cluster"},
+						}},
+					},
+				},
+			},
+			want: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					HostAliases: []corev1.HostAlias{{
+						IP:        "10.43.165.210",
+						Hostnames: []string{"slurm-controller.cluster"},
+					}},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

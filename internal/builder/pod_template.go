@@ -51,6 +51,7 @@ func (b *Builder) buildPodTemplate(opts PodTemplateOpts) corev1.PodTemplateSpec 
 	out.Spec.ImagePullSecrets = structutils.MergeList(out.Spec.ImagePullSecrets, opts.merge.ImagePullSecrets)
 	out.Spec.Hostname = reflectutils.UseNonZeroOrDefault(opts.merge.Hostname, opts.base.Hostname)
 	out.Spec.Subdomain = reflectutils.UseNonZeroOrDefault(opts.merge.Subdomain, opts.base.Subdomain)
+	out.Spec.HostAliases = structutils.MergeList(out.Spec.HostAliases, opts.merge.HostAliases)
 	out.Spec.Affinity = reflectutils.UseNonZeroOrDefault(opts.merge.Affinity, opts.base.Affinity)
 	out.Spec.Tolerations = structutils.MergeList(out.Spec.Tolerations, opts.merge.Tolerations)
 	out.Spec.PriorityClassName = reflectutils.UseNonZeroOrDefault(opts.merge.PriorityClassName, opts.base.PriorityClassName)
