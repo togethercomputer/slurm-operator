@@ -275,7 +275,7 @@ func buildSlurmConf(
 	conf.AddProperty(config.NewPropertyRaw("### SYSTEM DEFAULTS ###"))
 	conf.AddProperty(config.NewProperty("UnkillableStepTimeout", 600))
 	conf.AddProperty(config.NewProperty("HealthCheckInterval", 60))
-	conf.AddProperty(config.NewProperty("HealthCheckNodeState", "ANY"))
+	conf.AddProperty(config.NewProperty("HealthCheckNodeState", "IDLE"))
 	conf.AddProperty(config.NewProperty("HealthCheckProgram", "/usr/bin/gpu_healthcheck.sh"))
 	conf.AddProperty(config.NewProperty("JobRequeue", 0))
 
