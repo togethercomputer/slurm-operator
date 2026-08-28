@@ -8,10 +8,12 @@ set -eu
 # SOCKET - Named socket to read from
 
 mkdir -v -p "$(dirname "$SOCKET")"
-rm -f "$SOCKET"
-if ! [ -f "$SOCKET" ]; then
+if ! [ -p "$SOCKET" ]; then
+	rm -f "$SOCKET"
 	mkfifo -m 777 "$SOCKET"
 fi
-while IFS="" read data; do
-	echo "$data"
-done <"$SOCKET"
+
+while true; do
+	cat "$SOCKET" || true
+	sleep 1
+done
