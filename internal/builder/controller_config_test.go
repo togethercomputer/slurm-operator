@@ -165,13 +165,16 @@ func TestBuilder_BuildControllerConfig(t *testing.T) {
 				for _, directive := range []string{
 					"UnkillableStepTimeout=600",
 					"HealthCheckInterval=60",
-					"HealthCheckNodeState=ANY",
+					"HealthCheckNodeState=IDLE",
 					"HealthCheckProgram=/usr/bin/gpu_healthcheck.sh",
 					"JobRequeue=0",
 				} {
 					if !strings.Contains(slurmConf, directive) {
 						t.Errorf("slurm.conf missing system default %q", directive)
 					}
+				}
+				if strings.Contains(slurmConf, "HealthCheckNodeState=ANY") {
+					t.Errorf("slurm.conf must not run health checks on allocated nodes")
 				}
 				if cgroupConf, ok := got.Data[cgroupConfFile]; ok {
 					if !strings.Contains(cgroupConf, "ConstrainRAMSpace=yes") {

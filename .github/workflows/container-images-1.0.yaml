@@ -91,6 +91,9 @@ jobs:
         with:
           version: v3.16.3
 
+      - name: Run lint
+        run: make golangci-lint
+
       - name: Run tests
         run: make helm-validate test
 
