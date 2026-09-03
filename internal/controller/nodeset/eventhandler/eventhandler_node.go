@@ -22,6 +22,8 @@ import (
 	"github.com/SlinkyProject/slurm-operator/internal/utils/objectutils"
 )
 
+const computeClassLabel = "together.ai/compute-class"
+
 func NewNodeEventHandler(reader client.Reader) *NodeEventHandler {
 	return &NodeEventHandler{
 		Reader: reader,
@@ -40,7 +42,11 @@ func (h *NodeEventHandler) Create(
 	evt event.CreateEvent,
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	// Intentionally blank
+	node, ok := evt.Object.(*corev1.Node)
+	if !ok {
+		return
+	}
+	h.enqueueNodeSetsForNode(ctx, node, q)
 }
 
 // Delete implements handler.EventHandler
@@ -85,6 +91,10 @@ func (h *NodeEventHandler) Update(
 	if !apiequality.Semantic.DeepEqual(oldNode.Annotations, newNode.Annotations) {
 		h.enqueueNodeSetsForNode(ctx, newNode, q)
 	}
+
+	if oldNode.Labels[computeClassLabel] != newNode.Labels[computeClassLabel] {
+		h.enqueueNodeSetsForNode(ctx, newNode, q)
+	}
 }
 
 func (h *NodeEventHandler) enqueueNodeSetsForNode(
@@ -114,13 +124,8 @@ func (h *NodeEventHandler) enqueueNodeSetsForNode(
 		if nodeset == nil {
 			continue
 		}
-		if node.Spec.Unschedulable {
-			logger.Info("Node was cordoned, reconcile NodeSet with Pod on Node",
-				"node", node.Name, "nodeset", klog.KObj(nodeset), "pod", klog.KObj(&pod))
-		} else {
-			logger.Info("Node was uncordoned, reconcile NodeSet with Pod on Node",
-				"node", node.Name, "nodeset", klog.KObj(nodeset), "pod", klog.KObj(&pod))
-		}
+		logger.Info("Node changed, reconcile NodeSet with Pod on Node",
+			"node", node.Name, "nodeset", klog.KObj(nodeset), "pod", klog.KObj(&pod))
 		objectutils.EnqueueRequest(q, nodeset)
 	}
 }

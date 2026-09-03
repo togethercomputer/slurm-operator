@@ -34,6 +34,8 @@ import (
 	slurmconditions "github.com/SlinkyProject/slurm-operator/pkg/conditions"
 )
 
+const computeClassLabel = "together.ai/compute-class"
+
 // syncStatus handles synchronizing Slurm Nodes and NodeSet Status.
 func (r *NodeSetReconciler) syncStatus(
 	ctx context.Context,
@@ -74,7 +76,21 @@ func (r *NodeSetReconciler) syncSlurmStatus(
 		if !podutils.IsHealthy(pod) {
 			return nil
 		}
-		return r.slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod)
+
+		var computeClass *string
+		if pod.Spec.NodeName != "" {
+			node := &corev1.Node{}
+			if err := r.Get(ctx, client.ObjectKey{Name: pod.Spec.NodeName}, node); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return err
+				}
+			} else {
+				value := node.Labels[computeClassLabel]
+				computeClass = &value
+			}
+		}
+
+		return r.slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, computeClass)
 	}
 	if _, err := utils.SlowStartBatch(len(pods), utils.SlowStartInitialBatchSize, syncSlurmStatusFn); err != nil {
 		return err
