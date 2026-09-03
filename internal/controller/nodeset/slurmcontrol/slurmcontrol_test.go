@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -89,8 +90,18 @@ var _ = Describe("SlurmControlInterface", func() {
 				}
 			}
 			o.State = ptr.To(stateSet.UnsortedList())
-			o.Comment = r.Comment
-			o.Reason = r.Reason
+			if r.Comment != nil {
+				o.Comment = r.Comment
+			}
+			if r.Reason != nil {
+				o.Reason = r.Reason
+			}
+			if r.Features != nil {
+				o.Features = r.Features
+			}
+			if r.FeaturesAct != nil {
+				o.ActiveFeatures = r.FeaturesAct
+			}
 		default:
 			return errors.New("failed to cast slurm object")
 		}
@@ -116,7 +127,7 @@ var _ = Describe("SlurmControlInterface", func() {
 			slurmcontrol = NewSlurmControl(controllers)
 
 			By("Update Slurm pod info")
-			err := slurmcontrol.UpdateNodeWithPodInfo(ctx, nodeset, pod)
+			err := slurmcontrol.UpdateNodeWithPodInfo(ctx, nodeset, pod, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Check Slurm Node podInfo")
@@ -187,7 +198,7 @@ var _ = Describe("SlurmControlInterface", func() {
 			slurmcontrol = NewSlurmControl(controllers)
 
 			By("Update Slurm pod info")
-			err := slurmcontrol.UpdateNodeWithPodInfo(ctx, nodeset, pod)
+			err := slurmcontrol.UpdateNodeWithPodInfo(ctx, nodeset, pod, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Check Slurm Node podInfo")
@@ -213,7 +224,7 @@ var _ = Describe("SlurmControlInterface", func() {
 			pod.Spec.NodeName = "bar"
 
 			By("Update Slurm pod info")
-			err = slurmcontrol.UpdateNodeWithPodInfo(ctx, nodeset, pod)
+			err = slurmcontrol.UpdateNodeWithPodInfo(ctx, nodeset, pod, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Check Slurm Node podInfo")
@@ -392,6 +403,142 @@ var _ = Describe("SlurmControlInterface", func() {
 		})
 	})
 })
+
+func TestUpdateNodeWithPodInfo_ReconcilesComputeClassFeatures(t *testing.T) {
+	ctx := context.Background()
+	controller := &slinkyv1beta1.Controller{ObjectMeta: metav1.ObjectMeta{Name: "slurm"}}
+	nodeset := newNodeSet("foo", controller.Name, 1)
+	pod := nodesetutils.NewNodeSetPod(nodeset, controller, 0, "")
+	pod.Spec.NodeName = "kube-node"
+	slurmNodeName := nodesetutils.GetNodeName(pod)
+	info := podinfo.PodInfo{
+		Namespace: pod.Namespace,
+		PodName:   pod.Name,
+		Node:      pod.Spec.NodeName,
+	}
+	node := &types.V0044Node{
+		V0044Node: api.V0044Node{
+			Name:           ptr.To(slurmNodeName),
+			Comment:        ptr.To(info.ToString()),
+			Features:       ptr.To(api.V0044CsvString{"nodeset-static", "configured"}),
+			ActiveFeatures: ptr.To(api.V0044CsvString{"nodeset-static", "active-configured"}),
+		},
+	}
+
+	updateCount := 0
+	updateFn := func(_ context.Context, obj object.Object, req any, _ ...client.UpdateOption) error {
+		updateCount++
+		slurmNode := obj.(*types.V0044Node)
+		update := req.(api.V0044UpdateNodeMsg)
+		if update.Features != nil {
+			slurmNode.Features = update.Features
+		}
+		if update.FeaturesAct != nil {
+			slurmNode.ActiveFeatures = update.FeaturesAct
+		}
+		return nil
+	}
+	sclient := fake.NewClientBuilder().WithUpdateFn(updateFn).WithObjects(node).Build()
+	slurmControl := NewSlurmControl(newSlurmClientMap(controller.Name, sclient))
+
+	assertFeatures := func(want, wantActive []string) {
+		t.Helper()
+		got := &types.V0044Node{}
+		if err := sclient.Get(ctx, object.ObjectKey(slurmNodeName), got); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(ptr.Deref(got.Features, nil), want) {
+			t.Errorf("features = %v, want %v", ptr.Deref(got.Features, nil), want)
+		}
+		if !slices.Equal(ptr.Deref(got.ActiveFeatures, nil), wantActive) {
+			t.Errorf("active features = %v, want %v", ptr.Deref(got.ActiveFeatures, nil), wantActive)
+		}
+	}
+
+	preemptible := computeClassPreemptible
+	if err := slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, &preemptible); err != nil {
+		t.Fatal(err)
+	}
+	assertFeatures(
+		[]string{"nodeset-static", "configured", "preemptible"},
+		[]string{"nodeset-static", "active-configured", "preemptible"},
+	)
+	if updateCount != 1 {
+		t.Fatalf("update count = %d, want 1", updateCount)
+	}
+
+	if err := slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, &preemptible); err != nil {
+		t.Fatal(err)
+	}
+	if updateCount != 1 {
+		t.Fatalf("idempotent update count = %d, want 1", updateCount)
+	}
+
+	nonPreemptible := computeClassNonPreemptible
+	if err := slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, &nonPreemptible); err != nil {
+		t.Fatal(err)
+	}
+	assertFeatures(
+		[]string{"nodeset-static", "configured", "non-preemptible"},
+		[]string{"nodeset-static", "active-configured", "non-preemptible"},
+	)
+	if updateCount != 2 {
+		t.Fatalf("label-change update count = %d, want 2", updateCount)
+	}
+
+	unsupportedValue := "arbitrary-feature"
+	if err := slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, &unsupportedValue); err != nil {
+		t.Fatal(err)
+	}
+	assertFeatures(
+		[]string{"nodeset-static", "configured"},
+		[]string{"nodeset-static", "active-configured"},
+	)
+	if updateCount != 3 {
+		t.Fatalf("unsupported-label update count = %d, want 3", updateCount)
+	}
+
+	missingLabel := ""
+	if err := slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, &missingLabel); err != nil {
+		t.Fatal(err)
+	}
+	if updateCount != 3 {
+		t.Fatalf("missing-label update count = %d, want 3", updateCount)
+	}
+
+	if err := slurmControl.UpdateNodeWithPodInfo(ctx, nodeset, pod, nil); err != nil {
+		t.Fatal(err)
+	}
+	if updateCount != 3 {
+		t.Fatalf("missing-node update count = %d, want 3", updateCount)
+	}
+}
+
+func TestFeaturesEqual(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		left  []string
+		right []string
+		want  bool
+	}{
+		{name: "same order", left: []string{"a", "b"}, right: []string{"a", "b"}, want: true},
+		{name: "different order", left: []string{"a", "b"}, right: []string{"b", "a"}, want: true},
+		{name: "different features", left: []string{"a", "b"}, right: []string{"a", "c"}, want: false},
+		{name: "different duplicate counts", left: []string{"a", "a"}, right: []string{"a", "b"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := featuresEqual(tt.left, tt.right); got != tt.want {
+				t.Fatalf("featuresEqual(%v, %v) = %t, want %t", tt.left, tt.right, got, tt.want)
+			}
+		})
+	}
+}
 
 func Test_realSlurmControl_IsNodeDrain(t *testing.T) {
 	ctx := context.Background()

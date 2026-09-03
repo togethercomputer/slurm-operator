@@ -34,8 +34,8 @@ import (
 type SlurmControlInterface interface {
 	// RefreshNodeCache forces the Node cache to be refreshed
 	RefreshNodeCache(ctx context.Context, nodeset *slinkyv1beta1.NodeSet) error
-	// UpdateNodeWithPodInfo handles updating the Node with its pod info
-	UpdateNodeWithPodInfo(ctx context.Context, nodeset *slinkyv1beta1.NodeSet, pod *corev1.Pod) error
+	// UpdateNodeWithPodInfo handles updating the Node with its pod info and compute class.
+	UpdateNodeWithPodInfo(ctx context.Context, nodeset *slinkyv1beta1.NodeSet, pod *corev1.Pod, computeClass *string) error
 	// MakeNodeDrain handles adding the DRAIN state to the slurm node.
 	MakeNodeDrain(ctx context.Context, nodeset *slinkyv1beta1.NodeSet, pod *corev1.Pod, reason string) error
 	// MakeNodeUndrain handles removing the DRAIN state from the slurm node.
@@ -112,7 +112,12 @@ func (r *realSlurmControl) GetNodeNames(ctx context.Context, nodeset *slinkyv1be
 }
 
 // UpdateNodeWithPodInfo implements SlurmControlInterface.
-func (r *realSlurmControl) UpdateNodeWithPodInfo(ctx context.Context, nodeset *slinkyv1beta1.NodeSet, pod *corev1.Pod) error {
+func (r *realSlurmControl) UpdateNodeWithPodInfo(
+	ctx context.Context,
+	nodeset *slinkyv1beta1.NodeSet,
+	pod *corev1.Pod,
+	computeClass *string,
+) error {
 	logger := log.FromContext(ctx)
 
 	slurmClient := r.lookupClient(nodeset)
@@ -139,24 +144,37 @@ func (r *realSlurmControl) UpdateNodeWithPodInfo(ctx context.Context, nodeset *s
 	podInfoOld := &podinfo.PodInfo{}
 	_ = podinfo.ParseIntoPodInfo(slurmNode.Comment, podInfoOld)
 
-	if podInfoOld.Equal(podInfo) {
-		logger.V(3).Info("Node already contains podInfo, skipping update request",
-			"node", slurmNode.GetKey(), "podInfo", podInfo)
-		return nil
+	req := slurmapi.V0044UpdateNodeMsg{}
+	if !podInfoOld.Equal(podInfo) {
+		req.Comment = ptr.To(podInfo.ToString())
 	}
 
-	logger.Info("Update Slurm Node with Kubernetes Pod info",
-		"Node", slurmNode.Name, "podInfo", podInfo)
-	req := slurmapi.V0044UpdateNodeMsg{
-		Comment: ptr.To(podInfo.ToString()),
-	}
-	if err := slurmClient.Update(ctx, slurmNode, req); err != nil {
-		if !tolerateError(err) {
-			return err
+	if computeClass != nil {
+		features := reconcileComputeClass(ptr.Deref(slurmNode.Features, nil), *computeClass)
+		if !featuresEqual(ptr.Deref(slurmNode.Features, nil), features) {
+			req.Features = ptr.To(features)
+		}
+
+		activeFeatures := reconcileComputeClass(ptr.Deref(slurmNode.ActiveFeatures, nil), *computeClass)
+		if !featuresEqual(ptr.Deref(slurmNode.ActiveFeatures, nil), activeFeatures) {
+			req.FeaturesAct = ptr.To(activeFeatures)
 		}
 	}
 
-	if podInfoOld.Node != "" {
+	if req.Comment != nil || req.Features != nil || req.FeaturesAct != nil {
+		logger.Info("Update Slurm Node with Kubernetes Pod info and features",
+			"Node", slurmNode.Name, "podInfo", podInfo, "computeClass", computeClass)
+		if err := slurmClient.Update(ctx, slurmNode, req); err != nil {
+			if !tolerateError(err) {
+				return err
+			}
+		}
+	} else {
+		logger.V(3).Info("Slurm Node pod info and features are already reconciled",
+			"node", slurmNode.GetKey(), "podInfo", podInfo)
+	}
+
+	if !podInfoOld.Equal(podInfo) && podInfoOld.Node != "" {
 		logger.Info("Update Slurm Node state due to Kubernetes node migration", "Node", slurmNode.Name)
 		req := slurmapi.V0044UpdateNodeMsg{
 			State: ptr.To([]slurmapi.V0044UpdateNodeMsgState{slurmapi.V0044UpdateNodeMsgStateIDLE}),
@@ -169,6 +187,43 @@ func (r *realSlurmControl) UpdateNodeWithPodInfo(ctx context.Context, nodeset *s
 		}
 	}
 	return nil
+}
+
+const (
+	computeClassPreemptible    = "preemptible"
+	computeClassNonPreemptible = "non-preemptible"
+)
+
+func reconcileComputeClass(features []string, computeClass string) []string {
+	out := make([]string, 0, len(features)+1)
+	for _, feature := range features {
+		if feature != computeClassPreemptible && feature != computeClassNonPreemptible {
+			out = append(out, feature)
+		}
+	}
+	if computeClass == computeClassPreemptible || computeClass == computeClassNonPreemptible {
+		out = append(out, computeClass)
+	}
+	return out
+}
+
+func featuresEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	counts := make(map[string]int, len(left))
+	for _, feature := range left {
+		counts[feature]++
+	}
+	for _, feature := range right {
+		counts[feature]--
+		if counts[feature] < 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 const nodeReasonPrefix = "slurm-operator:"
