@@ -1,15 +1,17 @@
-# Build and push slurm-operator container images to Docker Hub (1.0 line).
+# Build and push slurm-operator container images to AWS ECR (1.0 line).
+# Images pushed: slurm-operator, slurm-operator-webhook (both built from this
+# repo via docker-bake.hcl's "operator"/"webhook" targets).
 #
 # Tagging:
-#   - push to slurm-1.0-together-changes: togethercomputer/slurm-operator:<VERSION> (from ./VERSION, no suffix)
+#   - push to slurm-1.0-together-changes: <ECR>/slurm-operator[-webhook]:<VERSION> (from ./VERSION, no suffix)
 #   - pull_request (same-repo only): ...:<VERSION>-dev-<short_sha>
 #
 # GitHub only evaluates workflows that exist on the ref being pushed. This file must live on
 # slurm-1.0-together-changes (not only on main), or pushes to that branch will not run any workflow.
 #
-# Required repository secrets:
-#   - DOCKERHUB_USERNAME
-#   - DOCKERHUB_TOKEN
+# OIDC: same account/role pattern as openldap-sync (github-actions-oidc-role;
+# trust policy in tcloud-infra covers repo:togethercomputer/slurm-operator:*).
+# Optional secret AWS_ROLE_ARN overrides the default role below.
 # Optional:
 #   - ROBOT_GITHUB_TOKEN
 
@@ -25,7 +27,9 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: togethercomputer
+  REGISTRY: 651706779278.dkr.ecr.us-west-2.amazonaws.com
+  AWS_REGION: us-west-2
+  AWS_ROLE: arn:aws:iam::651706779278:role/github-actions-oidc-role
   RELEASE_BRANCH: slurm-1.0-together-changes
 
 concurrency:
@@ -37,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -103,6 +108,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Configure AWS credentials
+        if: steps.should-push.outputs.push == 'true'
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN || env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: steps.should-push.outputs.push == 'true'
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+
       - name: Refuse to overwrite stable image tags
         if: steps.should-push.outputs.push == 'true' && github.event_name != 'pull_request'
         env:
@@ -120,20 +136,19 @@ jobs:
               exit 1
             fi
             inspect_output_lower="${inspect_output,,}"
-            if [[ "${inspect_output_lower}" != *"not found"* && "${inspect_output_lower}" != *"manifest unknown"* ]]; then
+            # ECR (unlike Docker Hub) has no implicit repo creation, so a repo that
+            # has never been pushed to reports "name unknown"/"repository ... does
+            # not exist" rather than "manifest unknown" for a missing tag.
+            if [[ "${inspect_output_lower}" != *"not found"* \
+                && "${inspect_output_lower}" != *"manifest unknown"* \
+                && "${inspect_output_lower}" != *"name unknown"* \
+                && "${inspect_output_lower}" != *"does not exist"* ]]; then
               echo "::error::Unable to verify whether ${image_ref} already exists"
               printf '%s\n' "${inspect_output}"
               exit 1
             fi
             echo "Stable image tag is available: ${image_ref}"
           done
-
-      - name: Log in to Docker Hub
-        if: steps.should-push.outputs.push == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build (images + charts, no registry push)
         if: steps.should-push.outputs.push != 'true'
