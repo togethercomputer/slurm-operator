@@ -742,6 +742,10 @@ login:
     # limits:
     #   cpu: 2
     #   memory: 4Gi
+  #
+  # -- (object)
+  # Configure the login container readiness probe.
+  readinessProbe: {}
 
 #
 # Slurm compute (slurmd) configurations.

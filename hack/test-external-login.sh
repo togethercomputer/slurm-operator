@@ -12,12 +12,13 @@ rendered="$(
         --set controller.externalConfig.host=controller.example \
         --set controller.externalConfig.port=6817 \
         --set login.enabled=true \
+        --set-json 'login.readinessProbe={"exec":{"command":["/usr/bin/test","-f","/tmp/ready"]},"periodSeconds":5}' \
         --set slurmKeyRef.name=external-auth \
         --set slurmKeyRef.key=custom.key \
         --show-only templates/login/login-deployment.yaml
 )"
 
-for expected in 'key: "custom.key"' 'path: slurm.key'; do
+for expected in 'key: "custom.key"' 'path: slurm.key' 'readinessProbe:' '/tmp/ready'; do
     if [[ "$rendered" != *"$expected"* ]]; then
         printf 'external login render is missing %q\n' "$expected" >&2
         exit 1
