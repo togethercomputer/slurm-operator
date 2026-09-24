@@ -47,6 +47,21 @@ func Test_NodeEventHandler_Create(t *testing.T) {
 			},
 			want: 0,
 		},
+		{
+			name: "Node created - should enqueue NodeSet",
+			fields: fields{
+				Reader: indexes.NewFakeClientBuilderWithIndexes(
+					newNodeSet("foo", "slurm", 0),
+					newNodeSetPod(newNodeSet("foo", "slurm", 0), 0, "test-node"),
+				).Build(),
+			},
+			args: args{
+				ctx: context.TODO(),
+				evt: event.CreateEvent{Object: newNode("test-node", false)},
+				q:   newQueue(),
+			},
+			want: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -206,6 +221,42 @@ func Test_NodeEventHandler_Update(t *testing.T) {
 			want: 0, // Should not enqueue anything
 		},
 		{
+			name: "Compute class changed - should enqueue NodeSet",
+			fields: fields{
+				Reader: indexes.NewFakeClientBuilderWithIndexes(
+					nodeset,
+					newNodeSetPod(nodeset, 0, "test-node"),
+				).Build(),
+			},
+			args: args{
+				ctx: context.TODO(),
+				evt: event.UpdateEvent{
+					ObjectOld: newNodeWithLabels("test-node", map[string]string{computeClassLabel: "preemptible"}),
+					ObjectNew: newNodeWithLabels("test-node", map[string]string{computeClassLabel: "non-preemptible"}),
+				},
+				q: newQueue(),
+			},
+			want: 1,
+		},
+		{
+			name: "Unrelated label changed - should not enqueue",
+			fields: fields{
+				Reader: indexes.NewFakeClientBuilderWithIndexes(
+					nodeset,
+					newNodeSetPod(nodeset, 0, "test-node"),
+				).Build(),
+			},
+			args: args{
+				ctx: context.TODO(),
+				evt: event.UpdateEvent{
+					ObjectOld: newNodeWithLabels("test-node", map[string]string{"example.com/label": "old"}),
+					ObjectNew: newNodeWithLabels("test-node", map[string]string{"example.com/label": "new"}),
+				},
+				q: newQueue(),
+			},
+			want: 0,
+		},
+		{
 			name: "No worker pods on node - should not enqueue",
 			fields: fields{
 				Reader: indexes.NewFakeClientBuilderWithIndexes().Build(), // No pods
@@ -248,5 +299,11 @@ func newNode(name string, unschedulable bool) *corev1.Node {
 			Unschedulable: unschedulable,
 		},
 	}
+	return node
+}
+
+func newNodeWithLabels(name string, labels map[string]string) *corev1.Node {
+	node := newNode(name, false)
+	node.Labels = labels
 	return node
 }

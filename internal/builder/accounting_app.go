@@ -29,8 +29,8 @@ const (
 	slurmdbdConfFile = "slurmdbd.conf"
 
 	// Volume names for accounting initContainer fix
-	slurmSecretsTmpVolume = "slurm-secrets-tmp"
-	slurmSecretsTmpDir    = "/tmp/slurm-secrets"
+	slurmSecretsTmpVolume = "slurm-secrets-tmp" //nolint:gosec // Kubernetes volume name, not a credential.
+	slurmSecretsTmpDir    = "/tmp/slurm-secrets" //nolint:gosec // Kubernetes mount path, not a credential.
 )
 
 func (b *Builder) BuildAccounting(accounting *slinkyv1beta1.Accounting) (*appsv1.StatefulSet, error) {
