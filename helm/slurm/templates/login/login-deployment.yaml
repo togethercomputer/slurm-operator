@@ -85,6 +85,10 @@ spec:
         resources:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+        {{- with .Values.login.readinessProbe }}
+        readinessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         env:
         - name: SLURM_CLUSTER_NAME
           value: {{ include "slurm.fullname" . }}
