@@ -746,6 +746,9 @@ login:
   # -- (object)
   # Configure the login container readiness probe.
   readinessProbe: {}
+  # -- (object)
+  # Configure the login container liveness probe.
+  livenessProbe: {}
 
 #
 # Slurm compute (slurmd) configurations.
