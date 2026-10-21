@@ -2,7 +2,7 @@ module github.com/togethercomputer/slurm-operator
 
 go 1.25.0
 
-toolchain go1.25.3
+toolchain go1.26.10
 
 require (
 	github.com/SlinkyProject/slurm-client v1.0.0
