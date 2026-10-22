@@ -475,7 +475,7 @@ loginsets:
       # -- The image to use, `${repository}:${tag}`.
       # Ref: https://kubernetes.io/docs/concepts/containers/images/#image-names
       image:
-        repository: ghcr.io/slinkyproject/login
+        repository: docker.io/togethercomputer/slurm-login
         tag: 25.11-ubuntu24.04
       # -- Environment passed to the image.
       env: []

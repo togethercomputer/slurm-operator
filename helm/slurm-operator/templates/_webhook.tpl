@@ -45,7 +45,7 @@ Create the name of the webhook service account to use
 Determine operator webhook image repository
 */}}
 {{- define "slurm-operator.webhook.image.repository" -}}
-{{ .Values.webhook.image.repository | default "ghcr.io/slinkyproject/slurm-operator-webhook" }}
+{{ .Values.webhook.image.repository | default "docker.io/togethercomputer/slurm-operator-webhook" }}
 {{- end }}
 
 {{/*

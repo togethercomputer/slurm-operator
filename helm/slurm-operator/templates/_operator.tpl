@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 Determine operator image repository
 */}}
 {{- define "slurm-operator.operator.image.repository" -}}
-{{ .Values.operator.image.repository | default "ghcr.io/slinkyproject/slurm-operator" }}
+{{ .Values.operator.image.repository | default "docker.io/togethercomputer/slurm-operator" }}
 {{- end }}
 
 {{/*

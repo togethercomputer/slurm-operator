@@ -47,6 +47,7 @@ group "default" {
   targets = [
     "operator",
     "webhook",
+    "login",
   ]
 }
 
@@ -87,5 +88,17 @@ target "webhook" {
   }
   tags = [
     format_tag("${REGISTRY}", "slurm-operator-webhook", "${VERSION}"),
+  ]
+}
+
+################################################################################
+
+# Wrapper over ghcr.io/slinkyproject/login with upgraded ca-certificates (CVE-2026-111943).
+target "login" {
+  inherits = ["_multiarch"]
+  context = "images/login"
+  dockerfile = "Dockerfile"
+  tags = [
+    format_tag("${REGISTRY}", "slurm-login", "25.11-ubuntu24.04"),
   ]
 }
