@@ -95,7 +95,7 @@ Kubernetes: `>= 1.29.0-0`
 | loginsets.slinky.enabled | bool | `false` | Enable use of this LoginSet. |
 | loginsets.slinky.extraSshdConfig | string | `nil` | Extra configuration lines appended to `/etc/ssh/sshd_config`. Ref: https://manpages.ubuntu.com/manpages/noble/man5/sshd_config.5.html |
 | loginsets.slinky.login.env | list | `[]` | Environment passed to the image. |
-| loginsets.slinky.login.image | object | `{"repository":"ghcr.io/slinkyproject/login","tag":"25.11-ubuntu24.04"}` | The image to use, `${repository}:${tag}`. Ref: https://kubernetes.io/docs/concepts/containers/images/#image-names |
+| loginsets.slinky.login.image | object | `{"repository":"docker.io/togethercomputer/slurm-login","tag":"25.11-ubuntu24.04"}` | The image to use, `${repository}:${tag}`. Ref: https://kubernetes.io/docs/concepts/containers/images/#image-names |
 | loginsets.slinky.login.resources | object | `{}` | The container resource limits and requests. Ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#resource-requests-and-limits-of-pod-and-container |
 | loginsets.slinky.login.securityContext | object | `{"privileged":false}` | The container security context to use. Ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container |
 | loginsets.slinky.login.volumeMounts | list | `[]` | List of volume mounts to use. Ref: https://kubernetes.io/docs/concepts/storage/volumes/ |
